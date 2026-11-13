@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import dns.exception
+import dns.flags
 import dns.message
 import dns.query
 import dns.rcode
