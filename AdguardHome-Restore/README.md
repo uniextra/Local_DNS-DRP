@@ -84,7 +84,7 @@ Para detener el servicio:
 docker compose down
 ```
 
-Cuando cambies el código o el Dockerfile, vuelve a construir con `docker compose up -d --build`. Si solo cambias valores de `.env`, recrea el contenedor con `docker compose up -d`.
+Cuando cambies el código o el Dockerfile, vuelve a construir con `docker compose up -d --build`. Si solo cambias valores de `environment:` en el YAML, recrea el contenedor con `docker compose up -d`.
 
 ## Variables de entorno
 
@@ -151,7 +151,7 @@ Por tanto, aunque el servidor Docker tenga configurado AdGuard Home como DNS, el
 
 ## Seguridad y requisitos de red
 
-- Mantén `.env` fuera del control de versiones; contiene el token de Telegram.
+- El token de Telegram está escrito directamente en `docker-compose.yml`; protege ese fichero y evita publicar credenciales reales.
 - El contenedor se ejecuta como usuario sin privilegios, elimina capabilities, utiliza un sistema de archivos raíz de solo lectura y no publica puertos.
 - No necesita acceso al socket de Docker.
 - El host Docker debe poder alcanzar por UDP las IP y puertos DNS definidos en `TARGETS`.
