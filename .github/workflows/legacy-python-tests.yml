@@ -1,0 +1,29 @@
+name: Legacy Python tests
+
+on:
+  push:
+    paths:
+      - "legacy-python/**"
+      - ".github/workflows/legacy-python-tests.yml"
+  pull_request:
+    paths:
+      - "legacy-python/**"
+      - ".github/workflows/legacy-python-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy-python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q .
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
