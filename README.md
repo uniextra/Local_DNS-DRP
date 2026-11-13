@@ -39,7 +39,7 @@ services:
       TELEGRAM_CHAT_ID: "YOUR_CHAT_ID"
       CHECK_INTERVAL: "60"
       DNS_TIMEOUT: "3"
-      DNS_TEST_DOMAIN: "example.com"
+      DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
       LOG_LEVEL: "INFO"
     dns:
@@ -98,7 +98,7 @@ Set these values in the Compose `environment:` section. Only `TARGETS`, `TELEGRA
 | `TELEGRAM_CHAT_ID` | Yes | — | User, group or channel ID that receives alerts. Group IDs are often negative. |
 | `CHECK_INTERVAL` | No | `60` | Seconds between monitoring cycles; integer greater than zero. |
 | `DNS_TIMEOUT` | No | `3` | DNS query timeout in seconds; decimals are supported. |
-| `DNS_TEST_DOMAIN` | No | `example.com` | Domain queried using an A (IPv4) record request. |
+| `DNS_TEST_DOMAIN` | No | `google.com` | Domain queried using an A (IPv4) record request. |
 | `TELEGRAM_TIMEOUT` | No | `10` | Telegram HTTP request timeout in seconds; integer greater than zero. |
 | `LOG_LEVEL` | No | `INFO` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
 
