@@ -24,26 +24,9 @@ cd Adguardhome-restore/AdguardHome-Restore
 
 Si el repositorio ya está clonado en tu servidor, simplemente entra en `AdguardHome-Restore`.
 
-### 2. Crear `.env`
+### 2. Configurar `docker-compose.yml`
 
-Copia el fichero de ejemplo:
-
-```bash
-cp .env.example .env
-```
-
-Edita `.env` y configura como mínimo:
-- Las IP de las instancias DNS en `TARGETS`.
-- El token del bot en `TELEGRAM_BOT_TOKEN`.
-- El chat o grupo receptor en `TELEGRAM_CHAT_ID`.
-
-Consulta la sección [Variables de entorno](#variables-de-entorno) para conocer todos los parámetros.
-
-**Importante:** no subas ni compartas el fichero `.env`; contiene las credenciales del bot de Telegram.
-
-### 3. Revisar o crear `docker-compose.yml`
-
-El repositorio ya incluye `docker-compose.yml`. Si necesitas crearlo manualmente, utiliza este contenido:
+Todas las variables se definen directamente en la sección `environment:` de Compose. No hace falta crear ningún fichero `.env`. Edita los valores de ejemplo en `docker-compose.yml` antes de arrancar el servicio.
 
 ```yaml
 services:
@@ -53,12 +36,18 @@ services:
       dockerfile: Dockerfile
     container_name: adguard-dns-monitor
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      TARGETS: "adguard-home=192.168.1.2,adguard-backup=192.168.1.3"
+      TELEGRAM_BOT_TOKEN: "YOUR_BOT_TOKEN"
+      TELEGRAM_CHAT_ID: "YOUR_CHAT_ID"
+      CHECK_INTERVAL: "60"
+      DNS_TIMEOUT: "3"
+      DNS_TEST_DOMAIN: "example.com"
+      TELEGRAM_TIMEOUT: "10"
+      LOG_LEVEL: "INFO"
     dns:
       - 1.1.1.1
       - 8.8.8.8
-    # No se publican puertos: el servicio no tiene interfaz web.
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -73,7 +62,7 @@ services:
         max-file: "3"
 ```
 
-Mantén `docker-compose.yml`, `Dockerfile`, `monitor.py`, `requirements.txt` y `.env` en el mismo directorio. La configuración `dns:` fija los resolvers del contenedor; no modifica la configuración DNS del host.
+Sustituye las IP, el token y el Chat ID por tus valores reales. No añadas `env_file:`; la configuración se inyecta directamente desde este YAML.
 
 ### 4. Construir y arrancar
 
@@ -99,74 +88,45 @@ Cuando cambies el código o el Dockerfile, vuelve a construir con `docker compos
 
 ## Variables de entorno
 
-Todas las opciones se configuran en el fichero `.env`. No es necesario modificar el código.
+Todas las variables se configuran directamente en `environment:` dentro de `docker-compose.yml`. No es necesario crear un fichero `.env`.
 
 | Variable | Obligatoria | Valor por defecto | Descripción |
 | --- | --- | --- | --- |
-| `TARGETS` | Sí | — | Lista de servidores DNS a monitorizar. Formato: `nombre=IP[:puerto]`, separados por comas. El puerto por defecto es `53`. |
-| `TELEGRAM_BOT_TOKEN` | Sí | — | Token del bot de Telegram. Se obtiene hablando con `@BotFather`. |
-| `TELEGRAM_CHAT_ID` | Sí | — | ID del chat, grupo o canal al que se enviarán las notificaciones. |
-| `CHECK_INTERVAL` | No | `60` | Intervalo entre ciclos de comprobación, en segundos. Debe ser un entero mayor que cero. |
+| `TARGETS` | Sí | — | Servidores DNS a monitorizar. Lista separada por comas con formato `nombre=IP[:puerto]`. Puerto por defecto: `53`. Utiliza IP, no nombres DNS. |
+| `TELEGRAM_BOT_TOKEN` | Sí | — | Token del bot obtenido de `@BotFather`. |
+| `TELEGRAM_CHAT_ID` | Sí | — | ID del usuario, grupo o canal que recibirá los avisos. Los grupos suelen tener un ID negativo. |
+| `CHECK_INTERVAL` | No | `60` | Segundos entre ciclos de monitorización. Entero mayor que cero. |
 | `DNS_TIMEOUT` | No | `3` | Tiempo máximo de espera de cada consulta DNS, en segundos. Admite decimales. |
-| `DNS_TEST_DOMAIN` | No | `example.com` | Dominio consultado en cada prueba. Se solicita un registro DNS de tipo A (IPv4). |
-| `TELEGRAM_TIMEOUT` | No | `10` | Tiempo máximo de espera de la petición HTTP a Telegram, en segundos. Debe ser un entero mayor que cero. |
-| `LOG_LEVEL` | No | `INFO` | Nivel de detalle del log de Python: `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL`. |
+| `DNS_TEST_DOMAIN` | No | `example.com` | Dominio consultado mediante un registro A (IPv4). |
+| `TELEGRAM_TIMEOUT` | No | `10` | Timeout HTTP para Telegram, en segundos. Entero mayor que cero. |
+| `LOG_LEVEL` | No | `INFO` | Nivel de log: `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL`. |
 
-### TARGETS: configurar varias instancias
+### Ejemplos de TARGETS
 
-Cada destino se define como `nombre=IP` o `nombre=IP:puerto`. Separa los destinos con comas. El nombre es una etiqueta descriptiva que aparecerá en los logs y en los avisos de Telegram.
-
-Ejemplo con dos instancias usando el puerto DNS estándar:
-
-```dotenv
-TARGETS=adguard-home=192.168.1.2,adguard-backup=192.168.1.3
+```yaml
+environment:
+  TARGETS: "home=192.168.1.2,backup=192.168.1.3"
 ```
 
-Ejemplo con un puerto DNS personalizado:
+También puedes indicar puertos personalizados o IPv6:
 
-```dotenv
-TARGETS=adguard-home=192.168.1.2:53,adguard-test=192.168.1.10:5353
+```yaml
+environment:
+  TARGETS: "home=192.168.1.2:53,lab=192.168.1.10:5353"
+  # Para IPv6 con puerto, utiliza corchetes:
+  # TARGETS: "office=[2001:db8::53]:53"
 ```
 
-También se admiten direcciones IPv6. Si se indica un puerto, encierra la dirección entre corchetes:
+Cada combinación IP/puerto debe ser única. El nombre es una etiqueta que aparecerá en los logs y avisos de Telegram.
 
-```dotenv
-TARGETS=adguard-v6=[2001:db8::53]:53
-```
+### Configurar Telegram
 
-Se deben indicar direcciones IP, no nombres DNS. El monitor contacta directamente con cada IP configurada. Cada combinación IP/puerto debe ser única.
+1. Abre una conversación con `@BotFather`, envía `/newbot` y sigue sus instrucciones.
+2. Copia el token generado en `TELEGRAM_BOT_TOKEN`.
+3. Inicia una conversación con tu bot (pulsa **Iniciar**). Para un grupo, añade el bot y permite que envíe mensajes.
+4. Obtén el ID del chat o grupo y configúralo en `TELEGRAM_CHAT_ID`.
 
-### Telegram: crear el bot y obtener el chat ID
-
-1. Abre Telegram y busca `@BotFather`.
-2. Ejecuta `/newbot` y sigue los pasos para crear el bot.
-3. Copia el token que te proporciona BotFather y ponlo en `TELEGRAM_BOT_TOKEN`.
-4. Abre el chat con tu nuevo bot y pulsa **Iniciar** (o envíale un mensaje). Si vas a recibir avisos en un grupo, añade el bot al grupo y asegúrate de que puede escribir.
-5. Obtén el ID del chat o grupo con un método fiable de consulta de actualizaciones de Telegram y configúralo en `TELEGRAM_CHAT_ID`. Los IDs de grupos suelen ser negativos.
-
-Ejemplo:
-
-```dotenv
-TELEGRAM_BOT_TOKEN=123456789:AA_example_token
-TELEGRAM_CHAT_ID=123456789
-```
-
-No utilices esos valores de ejemplo: sustitúyelos por las credenciales reales.
-
-### Ejemplo completo de `.env`
-
-```dotenv
-TARGETS=adguard-home=192.168.1.2,adguard-backup=192.168.1.3:53
-
-TELEGRAM_BOT_TOKEN=123456789:replace_with_real_token
-TELEGRAM_CHAT_ID=123456789
-
-CHECK_INTERVAL=60
-DNS_TIMEOUT=3
-DNS_TEST_DOMAIN=example.com
-TELEGRAM_TIMEOUT=10
-LOG_LEVEL=INFO
-```
+**Seguridad:** el token queda guardado en texto plano dentro de `docker-compose.yml`. Mantén el fichero privado, limita sus permisos y no publiques credenciales reales en Git. Aunque el repositorio sea privado, cualquier persona con acceso al repositorio podrá leerlas.
 
 ## Cómo funciona la comprobación DNS
 
