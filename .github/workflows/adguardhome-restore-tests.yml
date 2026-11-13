@@ -1,21 +1,21 @@
-name: Legacy Python tests
+name: AdGuardHome-Restore tests
 
 on:
   push:
     paths:
-      - "legacy-python/**"
-      - ".github/workflows/legacy-python-tests.yml"
+      - "AdguardHome-Restore/**"
+      - ".github/workflows/adguardhome-restore-tests.yml"
   pull_request:
     paths:
-      - "legacy-python/**"
-      - ".github/workflows/legacy-python-tests.yml"
+      - "AdguardHome-Restore/**"
+      - ".github/workflows/adguardhome-restore-tests.yml"
 
 jobs:
   test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: legacy-python
+        working-directory: AdguardHome-Restore
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
