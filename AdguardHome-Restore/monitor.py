@@ -171,7 +171,7 @@ def main() -> int:
     if timeout <= 0:
         raise ValueError("DNS_TIMEOUT must be > 0")
     telegram_timeout = env_int("TELEGRAM_TIMEOUT", 10)
-    query_name = os.getenv("DNS_TEST_DOMAIN", "example.com").strip().rstrip(".")
+    query_name = os.getenv("DNS_TEST_DOMAIN", "google.com").strip().rstrip(".")
     if not query_name:
         raise ValueError("DNS_TEST_DOMAIN cannot be empty")
 
