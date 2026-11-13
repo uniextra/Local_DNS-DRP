@@ -1,19 +1,12 @@
-FROM python:3.12-slim
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY main.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/adguard-dns-monitor ./main.go
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
-WORKDIR /app
-
-RUN groupadd --system --gid 10001 app \
-    && useradd --system --uid 10001 --gid app --home-dir /app app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY --chown=app:app monitor.py .
-
-USER app:app
-
-ENTRYPOINT ["python", "/app/monitor.py"]
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates \
+    && addgroup -S -g 10001 app \
+    && adduser -S -D -H -u 10001 -G app app
+COPY --from=build /out/adguard-dns-monitor /usr/local/bin/adguard-dns-monitor
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/adguard-dns-monitor"]
