@@ -197,9 +197,12 @@ def main() -> int:
     for target in targets:
         logger.info("Configured target: %s (%s:%s)", target.name, target.address, target.port)
 
-    # Initial notification gives immediate confirmation that configuration works.
+    # Notify Telegram immediately, including the number of monitored DNS endpoints.
+    dns_count = len(targets)
+    dns_label = "servidor DNS" if dns_count == 1 else "servidores DNS"
     notifier.send(
         "🟢 AdGuard DNS Monitor iniciado\n"
+        f"Monitorizando {dns_count} {dns_label}\n"
         + "\n".join(f"• {t.name}: {t.address}:{t.port}" for t in targets)
     )
 
