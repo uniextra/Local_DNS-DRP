@@ -9,6 +9,7 @@ A headless Docker service that monitors multiple AdGuard Home DNS instances by I
 - No web interface and no exposed ports.
 - DNS checks go directly to each configured AdGuard Home IP.
 - The container uses `1.1.1.1` and `8.8.8.8` as its own DNS resolvers, independently of the Docker host DNS.
+- Sends a startup Telegram message with the number and list of monitored DNS servers.
 - One alert is sent on failure and another on recovery.
 
 ## Deployment
