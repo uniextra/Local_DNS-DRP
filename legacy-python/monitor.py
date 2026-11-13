@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import signal
@@ -16,7 +17,6 @@ import dns.message
 import dns.query
 import dns.rcode
 import dns.rdatatype
-import dns.flags
 import requests
 
 
@@ -88,6 +88,10 @@ def parse_targets() -> list[Target]:
 
         if not address or not (1 <= port <= 65535):
             raise ValueError(f"Invalid endpoint: {endpoint}")
+        try:
+            address = str(ipaddress.ip_address(address))
+        except ValueError as exc:
+            raise ValueError(f"TARGETS must contain IP addresses, not hostnames: {address}") from exc
         key = (address, port)
         if key in seen:
             raise ValueError(f"Duplicate DNS endpoint: {endpoint}")
@@ -131,9 +135,9 @@ class Telegram:
 
 def check_dns(target: Target, query_name: str, timeout: float) -> tuple[bool, str]:
     """Send a DNS A query directly to the target and require a valid answer."""
-    request = dns.message.make_query(query_name, dns.rdatatype.A)
-    request.flags &= ~dns.flags.RD  # Do not depend on recursive upstream behavior.
     try:
+        # make_query() sets RD (recursion desired), like a normal DNS client.
+        request = dns.message.make_query(query_name, dns.rdatatype.A)
         response = dns.query.udp(
             request,
             target.address,
