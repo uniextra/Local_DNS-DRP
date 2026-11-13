@@ -51,7 +51,7 @@ func loadConfig() (MonitorConfig, error) {
 		if err != nil {
 			if ip := net.ParseIP(endpoint); ip != nil { host, port = endpoint, "53"
 			} else if strings.HasPrefix(endpoint, "[") && strings.HasSuffix(endpoint, "]") { host, port = strings.Trim(endpoint, "[]"), "53"
-			} else { return cfg, fmt.Errorf("invalid DNS endpoint %q; use IP or IP:port", endpoint) }
+			} else { return cfg, fmt.Errorf("TARGETS must contain IP addresses, not hostnames: %q", endpoint) }
 		}
 		if net.ParseIP(host) == nil { return cfg, fmt.Errorf("TARGETS must contain IP addresses, not hostnames: %q", host) }
 		portNum, err := strconv.Atoi(port); if err != nil || portNum < 1 || portNum > 65535 { return cfg, fmt.Errorf("invalid port in target %q", endpoint) }
