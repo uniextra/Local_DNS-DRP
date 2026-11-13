@@ -42,7 +42,7 @@ services:
       TELEGRAM_CHAT_ID: "YOUR_CHAT_ID"
       CHECK_INTERVAL: "60"
       DNS_TIMEOUT: "3"
-      DNS_TEST_DOMAIN: "example.com"
+      DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
       LOG_LEVEL: "INFO"
     dns:
@@ -97,7 +97,7 @@ Todas las variables se configuran directamente en `environment:` dentro de `dock
 | `TELEGRAM_CHAT_ID` | Sí | — | ID del usuario, grupo o canal que recibirá los avisos. Los grupos suelen tener un ID negativo. |
 | `CHECK_INTERVAL` | No | `60` | Segundos entre ciclos de monitorización. Entero mayor que cero. |
 | `DNS_TIMEOUT` | No | `3` | Tiempo máximo de espera de cada consulta DNS, en segundos. Admite decimales. |
-| `DNS_TEST_DOMAIN` | No | `example.com` | Dominio consultado mediante un registro A (IPv4). |
+| `DNS_TEST_DOMAIN` | No | `google.com` | Dominio consultado mediante un registro A (IPv4). |
 | `TELEGRAM_TIMEOUT` | No | `10` | Timeout HTTP para Telegram, en segundos. Entero mayor que cero. |
 | `LOG_LEVEL` | No | `INFO` | Nivel de log: `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL`. |
 
