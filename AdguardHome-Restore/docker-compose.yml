@@ -16,7 +16,7 @@ services:
       # Monitoring options
       CHECK_INTERVAL: "60"
       DNS_TIMEOUT: "3"
-      DNS_TEST_DOMAIN: "example.com"
+      DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
       LOG_LEVEL: "INFO"
     dns:
