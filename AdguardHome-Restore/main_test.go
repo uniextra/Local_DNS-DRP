@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"os"
 	"strings"
 	"testing"
 )
@@ -30,7 +29,6 @@ func TestLoadConfigParsesIPv4AndIPv6Targets(t *testing.T) {
 	t.Setenv("DNS_TIMEOUT", "3")
 	t.Setenv("TELEGRAM_TIMEOUT", "10")
 	t.Setenv("DNS_TEST_DOMAIN", "example.com")
-
 	cfg, err := loadConfig()
 	if err != nil { t.Fatalf("loadConfig returned error: %v", err) }
 	if len(cfg.Targets) != 3 { t.Fatalf("got %d targets, want 3", len(cfg.Targets)) }
@@ -41,11 +39,11 @@ func TestLoadConfigParsesIPv4AndIPv6Targets(t *testing.T) {
 
 func TestLoadConfigRejectsHostnameAndDuplicateEndpoint(t *testing.T) {
 	base := map[string]string{
-		"TELEGRAM_BOT_TOKEN":"token", "TELEGRAM_CHAT_ID":"chat",
-		"CHECK_INTERVAL":"60", "DNS_TIMEOUT":"3", "TELEGRAM_TIMEOUT":"10",
-		"DNS_TEST_DOMAIN":"example.com",
+		"TELEGRAM_BOT_TOKEN": "token", "TELEGRAM_CHAT_ID": "chat",
+		"CHECK_INTERVAL": "60", "DNS_TIMEOUT": "3", "TELEGRAM_TIMEOUT": "10",
+		"DNS_TEST_DOMAIN": "example.com",
 	}
-	for _, tc := range []struct{name, targets, want string}{
+	for _, tc := range []struct { name, targets, want string }{
 		{"hostname", "home=adguard.local", "IP addresses"},
 		{"duplicate", "one=192.168.1.2,two=192.168.1.2", "duplicate"},
 	} {
@@ -66,8 +64,4 @@ func TestLoadConfigRequiresTelegramCredentials(t *testing.T) {
 	t.Setenv("TELEGRAM_CHAT_ID", "")
 	_, err := loadConfig()
 	if err == nil || !strings.Contains(err.Error(), "TELEGRAM_BOT_TOKEN") { t.Fatalf("unexpected error: %v", err) }
-}
-
-func TestEnvironmentDoesNotDependOnHost(t *testing.T) {
-	_ = os.Getenv("PATH")
 }
