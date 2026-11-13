@@ -6,7 +6,7 @@ Servicio ligero, sin interfaz web, que comprueba periódicamente varias instanci
 
 - Monitoriza varias instancias AdGuard Home por IP y puerto DNS.
 - Envía una alerta cuando detecta un fallo y otra cuando la instancia se recupera.
-- Envía un aviso al arrancar y al detener el contenedor.
+- Envía al arrancar un aviso de Telegram indicando cuántos servidores DNS está monitorizando y sus direcciones; también avisa al detenerse.
 - No publica puertos ni necesita interfaz web.
 - Las consultas de monitorización se envían directamente a cada IP configurada.
 - El contenedor utiliza `1.1.1.1` (Cloudflare) y `8.8.8.8` (Google) como DNS propios, independientemente de los DNS configurados en el servidor Docker.
