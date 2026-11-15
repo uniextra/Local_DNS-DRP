@@ -1,7 +1,7 @@
 FROM golang:1.25-alpine AS build
 WORKDIR /src
-COPY main.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/adguard-dns-monitor ./main.go
+COPY *.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/adguard-dns-monitor .
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates \
