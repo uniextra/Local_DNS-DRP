@@ -4,19 +4,23 @@ set -euo pipefail
 msg_file=${1:?commit message file is required}
 commit_source=${2-}
 
-# Never modify merge commits or explicitly skipped commits.
+# Skip merge commits and allow one-off opt-out.
 [[ "${SKIP_AI_COAUTHORS:-0}" == "1" ]] && exit 0
 [[ "$commit_source" == "merge" ]] && exit 0
 
-coauthor="codex <codex@openai.com>"
-trailer="Co-authored-by: $coauthor"
+mapfile -t coauthors < <(git config --get-all ai.coauthor || true)
+[[ ${#coauthors[@]} -eq 0 ]] && exit 0
 
-# Avoid duplicates, including case-only differences.
-if grep -Fiq "$trailer" "$msg_file"; then
-  exit 0
-fi
+append_trailer() {
+  local entry=$1
+  local trailer="Co-authored-by: $entry"
 
-python3 - "$msg_file" "$trailer" <<'PY'
+  # GitHub recognizes the trailer only when the co-author email maps to a GitHub account.
+  if grep -Fiq "$trailer" "$msg_file"; then
+    return
+  fi
+
+  python3 - "$msg_file" "$trailer" <<'PY'
 from pathlib import Path
 import sys
 
@@ -28,3 +32,8 @@ if body:
     body += "\n\n"
 path.write_text(body + trailer + "\n")
 PY
+}
+
+for coauthor in "${coauthors[@]}"; do
+  append_trailer "$coauthor"
+done
