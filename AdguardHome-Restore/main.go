@@ -27,6 +27,8 @@ type MonitorConfig struct {
 	DNSTimeout time.Duration
 	TelegramTimeout time.Duration
 	TestDomain string
+	Router RouterConfig
+	RecoveryEnabled bool
 }
 type State struct { Known bool; Healthy bool }
 
@@ -67,6 +69,22 @@ func loadConfig() (MonitorConfig, error) {
 	cfg.TelegramTimeout, err = envDuration("TELEGRAM_TIMEOUT", "10"); if err != nil { return cfg, err }
 	cfg.TestDomain = strings.TrimSuffix(strings.TrimSpace(os.Getenv("DNS_TEST_DOMAIN")), "."); if cfg.TestDomain == "" { cfg.TestDomain = "google.com" }
 	if _, err := makeDNSQuery(cfg.TestDomain, 1); err != nil { return cfg, fmt.Errorf("invalid DNS_TEST_DOMAIN: %w", err) }
+	routerPassword := strings.TrimSpace(os.Getenv("ROUTER_PASSWORD"))
+	cfg.RecoveryEnabled = routerPassword != ""
+	if cfg.RecoveryEnabled {
+		cfg.Router = RouterConfig{
+			URL: strings.TrimSpace(os.Getenv("ROUTER_URL")), Username: strings.TrimSpace(os.Getenv("ROUTER_USERNAME")),
+			Password: routerPassword, DNSPrimary: strings.TrimSpace(os.Getenv("DNS_PRIMARY")),
+			DNSSecondary: strings.TrimSpace(os.Getenv("DNS_SECONDARY")),
+		}
+		if cfg.Router.URL == "" { cfg.Router.URL = "http://192.168.1.1" }
+		if cfg.Router.Username == "" { cfg.Router.Username = "1234" }
+		if cfg.Router.DNSPrimary == "" { cfg.Router.DNSPrimary = "1.1.1.1" }
+		if cfg.Router.DNSSecondary == "" { cfg.Router.DNSSecondary = "8.8.8.8" }
+		cfg.Router.WiFiOff, err = envDuration("WIFI_OFF_SECONDS", "10"); if err != nil { return cfg, err }
+		cfg.Router.Cooldown, err = envDuration("RECOVERY_COOLDOWN", "900"); if err != nil { return cfg, err }
+		cfg.Router.FailureThreshold = 3
+	}
 	return cfg, nil
 }
 
@@ -104,18 +122,44 @@ func notify(tg *Telegram, message string) { if err := tg.send(message); err != n
 
 func run(ctx context.Context, cfg MonitorConfig) {
 	tg := newTelegram(cfg); states := make(map[string]State, len(cfg.Targets)); var lines []string
+	var router *AskeyRouter
+	if cfg.RecoveryEnabled { router = newAskeyRouter(cfg.Router); log.Printf("Askey router recovery enabled for %s", cfg.Router.URL) } else { log.Printf("Askey router recovery disabled: ROUTER_PASSWORD is not set") }
+	consecutiveAllDown := 0
+	lastRecovery := time.Time{}
+	recoveryRunning := false
 	for _, target := range cfg.Targets { lines = append(lines, fmt.Sprintf("• %s: %s", target.Name, target.Addr)) }
 	label := "servidores DNS"; if len(cfg.Targets) == 1 { label = "servidor DNS" }
 	notify(tg, fmt.Sprintf("🟢 AdGuard DNS Monitor iniciado\nMonitorizando %d %s\n%s", len(cfg.Targets), label, strings.Join(lines,"\n")))
 	check := func() {
+		allDown := true
 		for _, target := range cfg.Targets {
 			healthy, detail := checkDNS(target, cfg.TestDomain, cfg.DNSTimeout); previous := states[target.Addr]; states[target.Addr] = State{Known:true, Healthy:healthy}
 			if healthy {
+				allDown = false
 				log.Printf("%s (%s): OK", target.Name, target.Addr)
 				if previous.Known && !previous.Healthy { notify(tg, fmt.Sprintf("🟢 AdGuard DNS RECUPERADO\nInstancia: %s\nIP: %s\nPrueba: %s\nEstado: DNS operativo", target.Name,target.Addr,cfg.TestDomain)) }
 			} else {
 				log.Printf("WARN %s (%s): FAILED - %s", target.Name,target.Addr,detail)
 				if !previous.Known || previous.Healthy { notify(tg,fmt.Sprintf("🔴 FALLO AdGuard DNS\nInstancia: %s\nIP: %s\nPrueba: %s\nError: %s",target.Name,target.Addr,cfg.TestDomain,detail)) }
+			}
+		}
+		if router != nil {
+			if allDown { consecutiveAllDown++ } else { consecutiveAllDown = 0 }
+			if allDown && consecutiveAllDown >= cfg.Router.FailureThreshold && !recoveryRunning && time.Since(lastRecovery) >= cfg.Router.Cooldown {
+				recoveryRunning = true
+				lastRecovery = time.Now()
+				notify(tg, fmt.Sprintf("🚨 ADGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
+				recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+				err := router.Recover(recoveryCtx)
+				cancel()
+				recoveryRunning = false
+				if err != nil {
+					log.Printf("ERROR Askey router recovery failed: %v", err)
+					notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+				} else {
+					log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+					notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+				}
 			}
 		}
 	}
