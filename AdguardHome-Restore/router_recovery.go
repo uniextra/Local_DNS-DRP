@@ -205,8 +205,31 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 	easyMesh, err := r.easyMeshState(ctx)
 	if err != nil { return fmt.Errorf("read 5 GHz EasyMesh state: %w", err) }
 	wasEnabled := []bool{radios[0].Admin == "1", radios[1].Admin == "1"}
+	var disableErrs []string
 	for id := 0; id < 2; id++ {
-		if err := r.setRadio(ctx, radios[id], "0", easyMesh); err != nil { return fmt.Errorf("disable Wi-Fi radio %d: %w", id, err) }
+		if !wasEnabled[id] { continue }
+		if err := r.setRadio(ctx, radios[id], "0", easyMesh); err != nil {
+			checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			state, checkErr := r.getRadio(checkCtx, id)
+			cancel()
+			if checkErr != nil || state.Admin != "0" {
+				disableErrs = append(disableErrs, fmt.Sprintf("radio %d disable: %v (state=%q, read error=%v)", id, err, state.Admin, checkErr))
+			}
+		}
+	}
+	if len(disableErrs) > 0 {
+		var restoreErrs []string
+		for id := 0; id < 2; id++ {
+			if !wasEnabled[id] { continue }
+			restoreCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			restoreErr := r.setRadio(restoreCtx, radios[id], "1", easyMesh)
+			state, checkErr := r.getRadio(restoreCtx, id)
+			cancel()
+			if restoreErr != nil || checkErr != nil || state.Admin != "1" {
+				restoreErrs = append(restoreErrs, fmt.Sprintf("radio %d restore: write=%v state=%q read=%v", id, restoreErr, state.Admin, checkErr))
+			}
+		}
+		return fmt.Errorf("%s; restoration: %s", strings.Join(disableErrs, "; "), strings.Join(restoreErrs, "; "))
 	}
 	timer := time.NewTimer(r.cfg.WiFiOff); defer timer.Stop()
 	select { case <-ctx.Done(): return ctx.Err(); case <-timer.C: }
