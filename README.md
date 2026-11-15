@@ -226,6 +226,39 @@ Los destinos de `TARGETS` también son independientes: son las IP de AdGuard Hom
 
 **Credenciales:** el token de Telegram y la contraseña del router se escriben directamente en `docker-compose.yml`, tal como requiere esta configuración. Mantén el repositorio privado y no publiques credenciales reales en un repositorio público. Ten en cuenta que las variables de entorno del contenedor pueden ser visibles a usuarios con permisos suficientes sobre el host Docker.
 
+## Codex co-author attribution
+
+This repository includes a Git `prepare-commit-msg` hook based on
+[ sample-codex-coauthor ](https://github.com/realsigridjin/sample-codex-coauthor).
+The hook appends the official Codex attribution trailer to future local commits:
+
+```text
+Co-authored-by: Codex <noreply@openai.com>
+```
+
+The address above follows the current attribution string used by the
+[official OpenAI Codex repository](https://github.com/openai/codex). It is
+different from older community examples using `codex@openai.com`.
+
+### Enable it in a local clone
+
+Run this once from the repository root:
+
+```bash
+bash scripts/setup-codex-attribution.sh
+```
+
+This configures the clone's Git hook path and co-author entry. After setup,
+normal local commits automatically receive the trailer. The setup is local
+to each clone; cloning the repository does not activate Git hooks by itself.
+
+The hook skips merge commits, avoids duplicate trailers, and supports a
+one-commit opt-out with `SKIP_AI_COAUTHORS=1`.
+
+Commits created through GitHub's web interface or an API must include the
+same trailer in the commit message; local Git hooks do not run for those
+operations.
+
 ## Desarrollo y validación
 
 La integración incluye pruebas automatizadas y un workflow de GitHub Actions para compilar y comprobar el código Go. Las pruebas de CI no sustituyen una prueba contra el router físico: los endpoints y formularios utilizados corresponden al firmware observado del Askey RTF8316VW y pueden variar con futuras versiones.
