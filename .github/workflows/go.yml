@@ -1,0 +1,27 @@
+name: Go
+
+on:
+  push:
+    paths:
+      - "AdguardHome-Restore/**"
+      - ".github/workflows/go.yml"
+  pull_request:
+    paths:
+      - "AdguardHome-Restore/**"
+      - ".github/workflows/go.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: AdguardHome-Restore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: AdguardHome-Restore/go.mod
+          cache-dependency-path: AdguardHome-Restore/go.mod
+      - run: gofmt -w *.go
+      - run: go test ./...
+      - run: go vet ./...
