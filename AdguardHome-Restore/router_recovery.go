@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -30,7 +30,8 @@ type AskeyRouter struct {
 }
 
 func newAskeyRouter(cfg RouterConfig) *AskeyRouter {
-	return &AskeyRouter{cfg: cfg, client: &http.Client{Timeout: 30*time.Second}}
+	jar, _ := cookiejar.New(nil)
+	return &AskeyRouter{cfg: cfg, client: &http.Client{Timeout: 30*time.Second, Jar: jar}}
 }
 
 func xorEncode(s string) string {
@@ -237,4 +238,3 @@ func (r *AskeyRouter) Recover(ctx context.Context) error {
 	return nil
 }
 
-var _ = bytes.MinRead
