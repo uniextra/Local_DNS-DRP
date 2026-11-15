@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify hook appends the Codex co-author trailer
+      - name: Verify hook appends the official Codex co-author trailer
         run: |
           bash -n .githooks/prepare-commit-msg scripts/setup-codex-attribution.sh
           tmp="$(mktemp -d)"
@@ -25,8 +25,9 @@ jobs:
           git -C "$tmp" init -q
           git -C "$tmp" config user.name "Test Author"
           git -C "$tmp" config user.email "test@example.com"
+          git -C "$tmp" config ai.coauthor "Codex <noreply@openai.com>"
           git -C "$tmp" config core.hooksPath "$GITHUB_WORKSPACE/.githooks"
           printf 'test\n' > "$tmp/test.txt"
           git -C "$tmp" add test.txt
           git -C "$tmp" commit -m "test: verify Codex co-author" -q
-          git -C "$tmp" show -s --format=%B HEAD | grep -Fx 'Co-authored-by: codex <codex@openai.com>'
+          git -C "$tmp" show -s --format=%B HEAD | grep -Fx 'Co-authored-by: Codex <noreply@openai.com>'
