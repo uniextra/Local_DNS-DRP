@@ -236,11 +236,12 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 	var errs []string
 	for id := 0; id < 2; id++ {
 		if !wasEnabled[id] { continue }
-		if err := r.setRadio(ctx, radios[id], "1", easyMesh); err != nil {
-			// A timed-out write has an ambiguous result; inspect actual state before retrying.
-			checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			state, checkErr := r.getRadio(checkCtx, id); cancel()
-			if checkErr != nil || state.Admin != "1" { errs = append(errs, fmt.Sprintf("radio %d restore: %v (verified state=%q, read error=%v)", id, err, state.Admin, checkErr)) }
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		writeErr := r.setRadio(restoreCtx, radios[id], "1", easyMesh)
+		state, checkErr := r.getRadio(restoreCtx, id)
+		cancel()
+		if checkErr != nil || state.Admin != "1" {
+			errs = append(errs, fmt.Sprintf("radio %d restore: write=%v (verified state=%q, read error=%v)", id, writeErr, state.Admin, checkErr))
 		}
 	}
 	for id := 0; id < 2; id++ {
