@@ -1,26 +1,29 @@
-name: AdGuardHome-Restore Go tests
+name: Adguardhome-DRP Go tests
 
 on:
   push:
     paths:
-      - "AdguardHome-Restore/**"
+      - "*.go"
+      - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/adguardhome-restore-tests.yml"
   pull_request:
     paths:
-      - "AdguardHome-Restore/**"
+      - "*.go"
+      - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/adguardhome-restore-tests.yml"
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: AdguardHome-Restore
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version-file: go.mod
       - name: Unit tests
         run: go test -v ./...
       - name: Build

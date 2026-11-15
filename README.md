@@ -1,4 +1,4 @@
-# AdGuardHome-Restore
+# Adguardhome-DRP
 
 Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router Askey RTF8316VW cuando todos los servidores DNS monitorizados dejan de responder.
 
@@ -28,8 +28,8 @@ El servicio no tiene interfaz web ni publica puertos. Se ejecuta como contenedor
 Clona el repositorio y entra en el directorio del servicio:
 
 ```bash
-git clone https://github.com/uniextra/Adguardhome-restore.git
-cd Adguardhome-restore/AdguardHome-Restore
+git clone https://github.com/uniextra/Adguardhome-DRP.git
+cd Adguardhome-DRP
 ```
 
 Toda la configuración se realiza **directamente en la sección `environment` de `docker-compose.yml`**. No se utiliza fichero `.env`, interpolación `${...}` ni variables externas del host.

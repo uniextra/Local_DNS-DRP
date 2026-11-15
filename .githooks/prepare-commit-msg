@@ -4,7 +4,6 @@ set -euo pipefail
 msg_file=${1:?commit message file is required}
 commit_source=${2-}
 
-# Skip merge commits and allow one-off opt-out.
 [[ "${SKIP_AI_COAUTHORS:-0}" == "1" ]] && exit 0
 [[ "$commit_source" == "merge" ]] && exit 0
 
@@ -12,28 +11,27 @@ mapfile -t coauthors < <(git config --get-all ai.coauthor || true)
 [[ ${#coauthors[@]} -eq 0 ]] && exit 0
 
 append_trailer() {
-  local entry=$1
-  local trailer="Co-authored-by: $entry"
+    local entry=$1
+    local trailer="Co-authored-by: $entry"
 
-  # GitHub recognizes the trailer only when the co-author email maps to a GitHub account.
-  if grep -Fiq "$trailer" "$msg_file"; then
-    return
-  fi
+    if grep -Fiq "$trailer" "$msg_file"; then
+        return
+    fi
 
-  python3 - "$msg_file" "$trailer" <<'PY'
-from pathlib import Path
-import sys
+    local tmp_file="${msg_file}.tmp.$$"
 
-path = Path(sys.argv[1])
-trailer = sys.argv[2]
-text = path.read_text()
-body = text.rstrip("\n")
-if body:
-    body += "\n\n"
-path.write_text(body + trailer + "\n")
-PY
+    awk -v trailer="$trailer" '
+        { lines[NR]=$0; if (NF) last=NR }
+        END {
+            for (i=1; i<=last; i++) print lines[i]
+            if (last > 0 && lines[last] !~ /^Co-authored-by:[[:space:]]*/) print ""
+            print trailer
+        }
+    ' "$msg_file" > "$tmp_file"
+
+    mv "$tmp_file" "$msg_file"
 }
 
 for coauthor in "${coauthors[@]}"; do
-  append_trailer "$coauthor"
+    append_trailer "$coauthor"
 done
