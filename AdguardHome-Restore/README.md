@@ -45,8 +45,8 @@ services:
       TELEGRAM_TIMEOUT: "10"
       # Optional automatic recovery for Askey RTF8316VW
       ROUTER_URL: "http://192.168.1.1"
-      ROUTER_USERNAME: "1234"
-      ROUTER_PASSWORD: ""
+      ROUTER_USERNAME: "1234" #Estandar pera Telefonica, Askey RTF8316VW
+      ROUTER_PASSWORD: "" #tu password, esta abajo del router
       DNS_PRIMARY: "1.1.1.1"
       DNS_SECONDARY: "8.8.8.8"
       WIFI_OFF_SECONDS: "10"
