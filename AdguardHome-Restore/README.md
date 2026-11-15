@@ -97,3 +97,46 @@ El estado se mantiene en memoria; al reiniciar el contenedor, los destinos se ev
 - El contenedor necesita salida HTTPS (TCP 443) hacia Telegram.
 - El contenedor usa un usuario sin privilegios, elimina capabilities, tiene filesystem raíz de solo lectura y no expone puertos.
 - Los DNS definidos en la propiedad Compose `dns:` solo son los resolvers propios del contenedor; no sustituyen ni modifican los destinos comprobados por el monitor.
+
+
+## Recuperación automática del router Askey
+
+La recuperación es opcional y se activa únicamente cuando se define `ROUTER_PASSWORD`. El monitor conserva su funcionamiento DNS y Telegram existente. Si **todos** los destinos de `TARGETS` fallan durante tres ciclos consecutivos, ejecuta la recuperación del router Askey RTF8316VW:
+
+1. Inicia sesión en la interfaz HTTP del router.
+2. Actualiza los DNS del servidor DHCP preservando la IP LAN, máscara, estado DHCP y rango DHCP actuales.
+3. Vuelve a leer la configuración para verificar los DNS.
+4. Lee la configuración actual de las radios 2,4 GHz y 5 GHz.
+5. Desactiva ambas radios, espera 10 segundos y vuelve a activar las que estaban activas.
+6. Verifica estado administrativo y operativo de ambas radios.
+7. Notifica por el mismo cliente Telegram el inicio y resultado de la recuperación.
+
+Se aplica un cooldown de 15 minutos entre intentos para evitar reinicios repetidos durante una caída prolongada. Los fallos de Telegram no bloquean la recuperación.
+
+### Variables de recuperación
+
+| Variable | Obligatoria | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `ROUTER_PASSWORD` | Sí, para activar | — | Contraseña web del router. Si está vacía, la recuperación queda desactivada. |
+| `ROUTER_URL` | No | `http://192.168.1.1` | URL del Askey. |
+| `ROUTER_USERNAME` | No | `1234` | Usuario de la interfaz web. |
+| `DNS_PRIMARY` | No | `1.1.1.1` | DNS primario que se configura en DHCP. |
+| `DNS_SECONDARY` | No | `8.8.8.8` | DNS secundario que se configura en DHCP. |
+| `WIFI_OFF_SECONDS` | No | `10` | Tiempo con ambas radios apagadas. |
+| `RECOVERY_COOLDOWN` | No | `900` | Segundos entre intentos de recuperación. |
+
+Configura el secreto en el entorno del contenedor o en un fichero `.env` local no versionado. No escribas contraseñas reales en el Compose ni las subas a Git.
+
+Ejemplo de `.env` local:
+
+```dotenv
+ROUTER_PASSWORD=your-router-password
+ROUTER_URL=http://192.168.1.1
+ROUTER_USERNAME=1234
+DNS_PRIMARY=1.1.1.1
+DNS_SECONDARY=8.8.8.8
+WIFI_OFF_SECONDS=10
+RECOVERY_COOLDOWN=900
+```
+
+> La integración está implementada para el Askey RTF8316VW y sus endpoints observados. Debe probarse en el router real antes de considerarla una recuperación de producción; no se simula ni se afirma una validación contra hardware desde CI.
