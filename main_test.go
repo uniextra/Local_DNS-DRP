@@ -285,7 +285,7 @@ func TestLoadConfigReadsCredentialFiles(t *testing.T) {
 		"router": filepath.Join(dir, "router"),
 	}
 	for name, path := range files {
-		value := map[string]string{"telegram":"bot-token", "chat":"123456", "router":"router-password"}[name]
+		value := map[string]string{"telegram": "bot-token", "chat": "123456", "router": "router-password"}[name]
 		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 			t.Fatal(err)
 		}
