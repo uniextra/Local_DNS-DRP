@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/binary"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -334,5 +336,78 @@ func TestFallbackDNSAnswers(t *testing.T) {
 				t.Fatalf("detail %q does not explain why the fallback resolvers failed", detail)
 			}
 		})
+	}
+}
+
+func TestSecretEnvPrefersFileAndTrimsWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "token")
+	if err := os.WriteFile(path, []byte("  file-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_SECRET", "environment-secret")
+	t.Setenv("TEST_SECRET_FILE", path)
+	got, err := secretEnv("TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "file-secret" {
+		t.Fatalf("secretEnv = %q, want file value", got)
+	}
+}
+
+func TestSecretEnvFallsBackToEnvironment(t *testing.T) {
+	t.Setenv("TEST_SECRET", "  environment-secret\n")
+	t.Setenv("TEST_SECRET_FILE", "")
+	got, err := secretEnv("TEST_SECRET")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "environment-secret" {
+		t.Fatalf("secretEnv = %q, want trimmed environment value", got)
+	}
+}
+
+func TestSecretEnvReportsUnreadableFile(t *testing.T) {
+	t.Setenv("TEST_SECRET", "environment-secret")
+	t.Setenv("TEST_SECRET_FILE", filepath.Join(t.TempDir(), "missing"))
+	if _, err := secretEnv("TEST_SECRET"); err == nil {
+		t.Fatal("expected missing secret file to return an error")
+	}
+}
+
+func TestLoadConfigReadsCredentialFiles(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"telegram": filepath.Join(dir, "telegram"),
+		"chat": filepath.Join(dir, "chat"),
+		"router": filepath.Join(dir, "router"),
+	}
+	values := map[string]string{
+		"telegram": "bot-token",
+		"chat":     "123456",
+		"router":   "router-password",
+	}
+	for name, path := range files {
+		if err := os.WriteFile(path, []byte(values[name]), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	t.Setenv("TELEGRAM_CHAT_ID", "")
+	t.Setenv("ROUTER_PASSWORD", "")
+	t.Setenv("TELEGRAM_BOT_TOKEN_FILE", files["telegram"])
+	t.Setenv("TELEGRAM_CHAT_ID_FILE", files["chat"])
+	t.Setenv("ROUTER_PASSWORD_FILE", files["router"])
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BotToken != "bot-token" || cfg.ChatID != "123456" {
+		t.Fatalf("credential files not loaded: token=%q chat=%q", cfg.BotToken, cfg.ChatID)
+	}
+	if !cfg.RecoveryEnabled || cfg.Router.Password != "router-password" {
+		t.Fatal("router password file was not loaded")
 	}
 }
