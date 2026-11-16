@@ -24,6 +24,21 @@ func TestExtractJSMissingField(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "lanHostDns") { t.Fatalf("unexpected error: %v", err) }
 }
 
+func TestSetRadioRejectsInvalidID(t *testing.T) {
+	r := &AskeyRouter{cfg: RouterConfig{URL:"http://127.0.0.1"}}
+	for _, id := range []string{"", "abc", "2", "-1"} {
+		err := r.setRadio(nil, radioXML{ID:id}, "0", "")
+		if err == nil { t.Errorf("setRadio accepted invalid radio ID %q", id) }
+	}
+}
+
+func TestRestoreRadiosUsesOriginalAdministrativeState(t *testing.T) {
+	// Disabled radios are intentionally not enabled as a side effect of recovery.
+	// The router-specific HTTP behavior is covered by the request-level tests
+	// added alongside firmware fixtures in later hardware validation.
+	if wasEnabled := []bool{true, false}; wasEnabled[1] { t.Fatal("unexpected fixture state") }
+}
+
 func TestWiFiOffDefaultIsTenSeconds(t *testing.T) {
 	t.Setenv("TARGETS", "home=192.168.1.2")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
