@@ -37,11 +37,12 @@ func envDuration(name, fallback string) (time.Duration, error) {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" { raw = fallback }
 	seconds, err := strconv.ParseFloat(raw, 64)
-	const maxSeconds = float64(math.MaxInt64) / float64(time.Second)
-	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || seconds > maxSeconds {
+	const maxDurationNanos = float64(1 << 63)
+	nanos := seconds * float64(time.Second)
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || nanos >= maxDurationNanos {
 		return 0, fmt.Errorf("%s must be a finite positive number of seconds within the time.Duration range", name)
 	}
-	duration := time.Duration(seconds * float64(time.Second))
+	duration := time.Duration(nanos)
 	if duration <= 0 { return 0, fmt.Errorf("%s is below the supported duration resolution", name) }
 	return duration, nil
 }
