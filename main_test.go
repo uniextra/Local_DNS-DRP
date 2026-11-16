@@ -123,7 +123,7 @@ func TestValidateDNSResponse(t *testing.T) {
 func TestMakeDNSQueryRejectsNamesOver255WireOctets(t *testing.T) {
 	domain := strings.Join([]string{
 		strings.Repeat("a", 63), strings.Repeat("b", 63),
-		strings.Repeat("c", 63), strings.Repeat("d", 60),
+		strings.Repeat("c", 63), strings.Repeat("d", 63),
 	}, ".")
 	if _, err := makeDNSQuery(domain, 1); err == nil {
 		t.Fatal("expected overlong DNS name to be rejected")
