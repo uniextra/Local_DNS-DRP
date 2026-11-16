@@ -11,7 +11,7 @@ El servicio no tiene interfaz web ni publica puertos. Se ejecuta como contenedor
 - Envía notificaciones de inicio y parada.
 - Activa opcionalmente la recuperación del Askey RTF8316VW cuando **todos** los destinos configurados están caídos durante tres comprobaciones consecutivas.
 - Actualiza los DNS del servidor DHCP del router preservando la configuración LAN y el rango DHCP existente.
-- Reinicia simultáneamente las radios Wi-Fi de 2,4 GHz y 5 GHz durante 10 segundos (configurable).
+- Desactiva y verifica las radios Wi-Fi de 2,4 GHz y 5 GHz; tras el intervalo configurado restaura las que estaban habilitadas. Las órdenes se envían y verifican secuencialmente porque no se ha validado una operación conjunta o concurrente del firmware.
 - Verifica la configuración DNS y el estado de las radios después del cambio.
 - Aplica un cooldown para evitar recuperaciones repetidas durante una caída prolongada.
 - Reutiliza el cliente Telegram existente para informar del inicio y resultado de la recuperación.
@@ -133,7 +133,7 @@ Cada combinación IP/puerto debe ser única.
 
 | Variable | Valor de ejemplo | Descripción |
 | --- | --- | --- |
-| `ROUTER_URL` | `http://192.168.1.1` | URL de administración del router Askey. |
+| `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router Askey. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
 | `ROUTER_PASSWORD` | Vacío | Contraseña web. La recuperación se activa cuando esta variable tiene valor. |
 | `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. |
@@ -143,7 +143,7 @@ Cada combinación IP/puerto debe ser única.
 
 ## Cómo funciona el monitor DNS
 
-El monitor envía a cada destino una consulta DNS UDP recursiva de tipo A. Considera operativo un servidor si recibe una respuesta DNS con el mismo identificador, no truncada, con código `NOERROR` y al menos una respuesta.
+El monitor envía a cada destino configurado una consulta DNS UDP recursiva de tipo A. Considera operativo un servidor únicamente si la respuesta tiene el mismo identificador, corresponde a la pregunta enviada, no está truncada, devuelve `NOERROR` y contiene un registro A válido para el nombre consultado o su cadena CNAME. Un registro A ajeno a la consulta no basta para marcar el servidor como saludable.
 
 - **Fallo:** se notifica en la primera comprobación fallida.
 - **Fallo persistente:** no se repite la notificación en cada ciclo mientras el estado no cambie.
@@ -176,7 +176,7 @@ La recuperación solo se inicia cuando **todos los destinos de `TARGETS` fallan 
 
 Se aplica un cooldown de 15 minutos por defecto para evitar repetir el procedimiento durante una caída prolongada. El valor puede cambiarse con `RECOVERY_COOLDOWN`.
 
-Los errores o timeouts de una petición de escritura no se interpretan automáticamente como prueba de que el cambio no se aplicó: el servicio consulta el estado real del router antes de decidir cómo continuar. Los fallos de Telegram no deben bloquear la recuperación.
+Los errores o timeouts de una petición de escritura DNS no se interpretan automáticamente como prueba de que el cambio no se aplicó: el servicio vuelve a leer la configuración DHCP y comprueba el valor real. Las órdenes Wi-Fi también se verifican mediante una lectura posterior, incluso si el POST devuelve HTTP 200. Si el firmware rechaza una sesión, el servicio intenta renovarla una sola vez. Los fallos de Telegram no deben bloquear la recuperación.
 
 ## Telegram
 
@@ -226,6 +226,8 @@ Los destinos de `TARGETS` también son independientes: son las IP de AdGuard Hom
 
 **Credenciales:** el token de Telegram y la contraseña del router se escriben directamente en `docker-compose.yml`, tal como requiere esta configuración. Mantén el repositorio privado y no publiques credenciales reales en un repositorio público. Ten en cuenta que las variables de entorno del contenedor pueden ser visibles a usuarios con permisos suficientes sobre el host Docker.
 
+**Transporte hacia el router:** el Askey puede exponer su interfaz de administración únicamente por HTTP. En ese caso, la contraseña y los datos de sesión viajan sin cifrar y el programa registra un aviso al iniciar la recuperación. Utiliza `ROUTER_URL: https://...` solo si el router ofrece HTTPS con un certificado válido; no desactives la validación TLS para ocultar errores de certificado. Si el firmware solo soporta HTTP, limita el acceso de administración a una LAN de confianza y nunca expongas esa interfaz a Internet.
+
 ## Codex co-author attribution
 
 This repository includes a Git `prepare-commit-msg` hook based on
@@ -261,5 +263,5 @@ operations.
 
 ## Desarrollo y validación
 
-La integración incluye pruebas automatizadas y un workflow de GitHub Actions para compilar y comprobar el código Go. Las pruebas de CI no sustituyen una prueba contra el router físico: los endpoints y formularios utilizados corresponden al firmware observado del Askey RTF8316VW y pueden variar con futuras versiones.
+La integración incluye un único workflow de GitHub Actions para comprobar `gofmt`, ejecutar `go test -race`, `go vet` y compilar el binario. Las pruebas simuladas no sustituyen una prueba contra el router físico: los endpoints y formularios utilizados corresponden al firmware observado del Askey RTF8316VW y pueden variar con futuras versiones. La activación simultánea exacta de ambas radios no se da por garantizada; las órdenes se envían secuencialmente y el intervalo de espera empieza cuando las dos están confirmadas como apagadas.
 
