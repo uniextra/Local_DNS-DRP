@@ -13,12 +13,12 @@ import (
 )
 
 type mockAskey struct {
-	mu sync.Mutex
-	admin [2]string
-	ignoreDisable int
-	dns string
+	mu                  sync.Mutex
+	admin               [2]string
+	ignoreDisable       int
+	dns                 string
 	dnsPostReturnsError bool
-	loginCount int
+	loginCount          int
 }
 
 func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -26,16 +26,20 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	case "/cgi-bin/cbGetWifi.xml":
 		_ = req.ParseForm()
 		id := 0
-		if req.Form.Get("dpm_cfg_wifi_0i") == "1" { id = 1 }
+		if req.Form.Get("dpm_cfg_wifi_0i") == "1" {
+			id = 1
+		}
 		m.mu.Lock()
 		admin := m.admin[id]
 		m.mu.Unlock()
 		w.Header().Set("Content-Type", "application/xml")
-		_, _ = fmt.Fprintf(w, `<cbGetWifi><Result>0</Result><dpm_cfg_wifi><dpm_cfg_wifi_id>%d</dpm_cfg_wifi_id><radio_adm_state>%s</radio_adm_state><radio_opr_status>%s</radio_opr_status><country_code>ES</country_code><standard>11</standard><adm_bandwidth>20</adm_bandwidth><adm_channel>1</adm_channel></dpm_cfg_wifi></cbGetWifi>`, id, admin, map[bool]string{true:"up",false:"down"}[admin=="1"])
+		_, _ = fmt.Fprintf(w, `<cbGetWifi><Result>0</Result><dpm_cfg_wifi><dpm_cfg_wifi_id>%d</dpm_cfg_wifi_id><radio_adm_state>%s</radio_adm_state><radio_opr_status>%s</radio_opr_status><country_code>ES</country_code><standard>11</standard><adm_bandwidth>20</adm_bandwidth><adm_channel>1</adm_channel></dpm_cfg_wifi></cbGetWifi>`, id, admin, map[bool]string{true: "up", false: "down"}[admin == "1"])
 	case "/cgi-bin/cbSetWifi.xml":
 		_ = req.ParseForm()
 		id := 0
-		if req.Form.Get("dpm_cfg_wifi_id") == "1" { id = 1 }
+		if req.Form.Get("dpm_cfg_wifi_id") == "1" {
+			id = 1
+		}
 		admin := req.Form.Get("radio_adm_state")
 		if req.Form.Get("sessionKey") != "test-session" {
 			w.Header().Set("Content-Type", "application/xml")
@@ -43,7 +47,9 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.mu.Lock()
-		if !(id == m.ignoreDisable && admin == "0") { m.admin[id] = admin }
+		if !(id == m.ignoreDisable && admin == "0") {
+			m.admin[id] = admin
+		}
 		m.mu.Unlock()
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(`<cbSetWifi><Result>0</Result></cbSetWifi>`))
@@ -65,7 +71,10 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		m.dns = req.Form.Get("lanHostDns")
 		fail := m.dnsPostReturnsError
 		m.mu.Unlock()
-		if fail { http.Error(w, "simulated lost write response", http.StatusInternalServerError); return }
+		if fail {
+			http.Error(w, "simulated lost write response", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	default:
 		http.NotFound(w, req)
@@ -75,7 +84,7 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func newMockRouter(t *testing.T, mock *mockAskey, off time.Duration) (*AskeyRouter, func()) {
 	t.Helper()
 	server := httptest.NewServer(mock)
-	router := newAskeyRouter(RouterConfig{URL:server.URL, Password:"secret", DNSPrimary:"1.1.1.1", DNSSecondary:"8.8.8.8", WiFiOff:off})
+	router := newAskeyRouter(RouterConfig{URL: server.URL, Password: "secret", DNSPrimary: "1.1.1.1", DNSSecondary: "8.8.8.8", WiFiOff: off})
 	router.client = server.Client()
 	router.sessionKey = "test-session"
 	return router, server.Close
@@ -83,10 +92,12 @@ func newMockRouter(t *testing.T, mock *mockAskey, off time.Duration) (*AskeyRout
 
 func waitFor(t *testing.T, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3*time.Second)
+	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if condition() { return }
-		time.Sleep(5*time.Millisecond)
+		if condition() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition was not reached before timeout")
 }
@@ -94,32 +105,44 @@ func waitFor(t *testing.T, condition func() bool) {
 func TestXORDecodeRoundTrip(t *testing.T) {
 	const input = "router-password"
 	encoded := xorEncode(input)
-	if encoded == input { t.Fatal("XOR encoding did not transform the input") }
-	if xorEncode(encoded) != input { t.Fatal("XOR encoding is not reversible") }
+	if encoded == input {
+		t.Fatal("XOR encoding did not transform the input")
+	}
+	if xorEncode(encoded) != input {
+		t.Fatal("XOR encoding is not reversible")
+	}
 }
 
 func TestExtractJS(t *testing.T) {
 	page := []byte(`<script>var lanHostDns = "1.1.1.1,8.8.8.8";</script>`)
 	got, err := extractJS(page, "lanHostDns")
-	if err != nil { t.Fatal(err) }
-	if got != "1.1.1.1,8.8.8.8" { t.Fatalf("got %q", got) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1.1.1.1,8.8.8.8" {
+		t.Fatalf("got %q", got)
+	}
 }
 
 func TestExtractJSMissingField(t *testing.T) {
 	_, err := extractJS([]byte(`var other = "value";`), "lanHostDns")
-	if err == nil || !strings.Contains(err.Error(), "lanHostDns") { t.Fatalf("unexpected error: %v", err) }
+	if err == nil || !strings.Contains(err.Error(), "lanHostDns") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestSetRadioRejectsInvalidID(t *testing.T) {
-	r := &AskeyRouter{cfg: RouterConfig{URL:"http://127.0.0.1"}}
+	r := &AskeyRouter{cfg: RouterConfig{URL: "http://127.0.0.1"}}
 	for _, id := range []string{"", "abc", "2", "-1"} {
-		err := r.setRadio(nil, radioXML{ID:id}, "0", "")
-		if err == nil { t.Errorf("setRadio accepted invalid radio ID %q", id) }
+		err := r.setRadio(nil, radioXML{ID: id}, "0", "")
+		if err == nil {
+			t.Errorf("setRadio accepted invalid radio ID %q", id)
+		}
 	}
 }
 
 func TestWiFiCancellationAlwaysRestoresEnabledRadios(t *testing.T) {
-	mock := &mockAskey{admin:[2]string{"1","1"}, ignoreDisable:-1}
+	mock := &mockAskey{admin: [2]string{"1", "1"}, ignoreDisable: -1}
 	router, closeServer := newMockRouter(t, mock, time.Hour)
 	defer closeServer()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -134,28 +157,36 @@ func TestWiFiCancellationAlwaysRestoresEnabledRadios(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) { t.Fatalf("restartWiFi error = %v, want context.Canceled", err) }
-	case <-time.After(3*time.Second):
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("restartWiFi error = %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
 		t.Fatal("restartWiFi did not return after cancellation")
 	}
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
-	if mock.admin != [2]string{"1","1"} { t.Fatalf("radio states after cancellation = %v, want both enabled", mock.admin) }
+	if mock.admin != [2]string{"1", "1"} {
+		t.Fatalf("radio states after cancellation = %v, want both enabled", mock.admin)
+	}
 }
 
 func TestWiFiDisableHTTP200MustBeVerified(t *testing.T) {
-	mock := &mockAskey{admin:[2]string{"1","1"}, ignoreDisable:1}
+	mock := &mockAskey{admin: [2]string{"1", "1"}, ignoreDisable: 1}
 	router, closeServer := newMockRouter(t, mock, time.Millisecond)
 	defer closeServer()
 	err := router.restartWiFi(context.Background())
-	if err == nil { t.Fatal("expected failed state verification to abort Wi-Fi restart") }
+	if err == nil {
+		t.Fatal("expected failed state verification to abort Wi-Fi restart")
+	}
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
-	if mock.admin != [2]string{"1","1"} { t.Fatalf("radio states after failed disable = %v, want both restored", mock.admin) }
+	if mock.admin != [2]string{"1", "1"} {
+		t.Fatalf("radio states after failed disable = %v, want both restored", mock.admin)
+	}
 }
 
 func TestUpdateDNSVerifiesAppliedChangeAfterHTTPError(t *testing.T) {
-	mock := &mockAskey{admin:[2]string{"1","1"}, ignoreDisable:-1, dns:"9.9.9.9,149.112.112.112", dnsPostReturnsError:true}
+	mock := &mockAskey{admin: [2]string{"1", "1"}, ignoreDisable: -1, dns: "9.9.9.9,149.112.112.112", dnsPostReturnsError: true}
 	router, closeServer := newMockRouter(t, mock, time.Second)
 	defer closeServer()
 	if err := router.updateDNS(context.Background()); err != nil {
@@ -163,19 +194,27 @@ func TestUpdateDNSVerifiesAppliedChangeAfterHTTPError(t *testing.T) {
 	}
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
-	if mock.dns != "1.1.1.1,8.8.8.8" { t.Fatalf("router DNS = %q, want requested DNS", mock.dns) }
+	if mock.dns != "1.1.1.1,8.8.8.8" {
+		t.Fatalf("router DNS = %q, want requested DNS", mock.dns)
+	}
 }
 
 func TestWiFiWriteRefreshesExpiredSessionOnce(t *testing.T) {
-	mock := &mockAskey{admin:[2]string{"1","1"}, ignoreDisable:-1}
+	mock := &mockAskey{admin: [2]string{"1", "1"}, ignoreDisable: -1}
 	router, closeServer := newMockRouter(t, mock, time.Millisecond)
 	defer closeServer()
 	router.sessionKey = "expired-session"
-	if err := router.restartWiFi(context.Background()); err != nil { t.Fatalf("restartWiFi failed after session refresh: %v", err) }
+	if err := router.restartWiFi(context.Background()); err != nil {
+		t.Fatalf("restartWiFi failed after session refresh: %v", err)
+	}
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
-	if mock.loginCount != 1 { t.Fatalf("login attempts = %d, want one session refresh", mock.loginCount) }
-	if mock.admin != [2]string{"1","1"} { t.Fatalf("radio states after restart = %v, want both enabled", mock.admin) }
+	if mock.loginCount != 1 {
+		t.Fatalf("login attempts = %d, want one session refresh", mock.loginCount)
+	}
+	if mock.admin != [2]string{"1", "1"} {
+		t.Fatalf("radio states after restart = %v, want both enabled", mock.admin)
+	}
 }
 
 func TestWiFiOffDefaultIsTenSeconds(t *testing.T) {
@@ -185,9 +224,15 @@ func TestWiFiOffDefaultIsTenSeconds(t *testing.T) {
 	t.Setenv("ROUTER_PASSWORD", "secret")
 	t.Setenv("WIFI_OFF_SECONDS", "")
 	cfg, err := loadConfig()
-	if err != nil { t.Fatal(err) }
-	if cfg.Router.WiFiOff.Seconds() != 10 { t.Fatalf("WiFi off duration = %s, want 10s", cfg.Router.WiFiOff) }
-	if !cfg.RecoveryEnabled { t.Fatal("router recovery should be enabled when ROUTER_PASSWORD is set") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Router.WiFiOff.Seconds() != 10 {
+		t.Fatalf("WiFi off duration = %s, want 10s", cfg.Router.WiFiOff)
+	}
+	if !cfg.RecoveryEnabled {
+		t.Fatal("router recovery should be enabled when ROUTER_PASSWORD is set")
+	}
 }
 
 func TestRouterRecoveryDisabledWithoutPassword(t *testing.T) {
@@ -196,6 +241,10 @@ func TestRouterRecoveryDisabledWithoutPassword(t *testing.T) {
 	t.Setenv("TELEGRAM_CHAT_ID", "chat")
 	t.Setenv("ROUTER_PASSWORD", "")
 	cfg, err := loadConfig()
-	if err != nil { t.Fatal(err) }
-	if cfg.RecoveryEnabled { t.Fatal("router recovery must be disabled without ROUTER_PASSWORD") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RecoveryEnabled {
+		t.Fatal("router recovery must be disabled without ROUTER_PASSWORD")
+	}
 }
