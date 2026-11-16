@@ -183,16 +183,43 @@ type radioXML struct {
 	ZeroWaitDFS string `xml:"zerowaitDFS"`
 }
 
+func isRouterAuthError(err error) bool {
+	if err == nil { return false }
+	message := err.Error()
+	return strings.Contains(message, "router HTTP 401") || strings.Contains(message, "router HTTP 403")
+}
+
+func (r *AskeyRouter) refreshSession(ctx context.Context) error {
+	r.invalidateSession()
+	if err := r.login(ctx); err != nil { return fmt.Errorf("refresh router session: %w", err) }
+	return nil
+}
+
 func (r *AskeyRouter) getRadio(ctx context.Context, id int) (radioXML, error) {
 	var radio radioXML
-	data, err := r.request(ctx, http.MethodPost, "/cgi-bin/cbGetWifi.xml", url.Values{"dpm_cfg_wifi_0i": {strconv.Itoa(id)}})
-	if err != nil { return radio, err }
-	var result wifiXML
-	if err := xml.Unmarshal(data, &result); err != nil { return radio, err }
-	if result.Result != "0" { return radio, fmt.Errorf("router Wi-Fi read returned result %q", result.Result) }
-	radio = result.Radio
-	if radio.ID == "" { radio.ID = strconv.Itoa(id) }
-	return radio, nil
+	for attempt := 0; attempt < 2; attempt++ {
+		data, err := r.request(ctx, http.MethodPost, "/cgi-bin/cbGetWifi.xml", url.Values{"dpm_cfg_wifi_0i": {strconv.Itoa(id)}})
+		if err != nil {
+			if attempt == 0 && isRouterAuthError(err) {
+				if loginErr := r.refreshSession(ctx); loginErr != nil { return radio, loginErr }
+				continue
+			}
+			return radio, err
+		}
+		var result wifiXML
+		if err := xml.Unmarshal(data, &result); err != nil { return radio, err }
+		if result.Result != "0" {
+			if attempt == 0 {
+				if loginErr := r.refreshSession(ctx); loginErr != nil { return radio, fmt.Errorf("router Wi-Fi read returned result %q; %w", result.Result, loginErr) }
+				continue
+			}
+			return radio, fmt.Errorf("router Wi-Fi read returned result %q after session refresh", result.Result)
+		}
+		radio = result.Radio
+		if radio.ID == "" { radio.ID = strconv.Itoa(id) }
+		return radio, nil
+	}
+	return radio, errors.New("router Wi-Fi read failed after session refresh")
 }
 
 func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string, easyMesh string) error {
@@ -205,15 +232,35 @@ func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string
 		"adm_tx_pwr_ratio": {radio.TxPower}, "adm_tx_preamble": {radio.Preamble},
 		"adm_guard_interval": {radio.Guard}, "beamforming": {radio.Beamforming}, "mld_group": {radio.MLD},
 		"wifi_unique_ssid_adm_state": {radio.UniqueSSID}, "dpm_cfg_wifi_id": {strconv.Itoa(id)},
-		"sessionKey": {r.sessionKey},
 	}
 	if id == 0 {
 		form.Set("obss_coexistence", radio.OBSS); form.Set("chn_40mhz_ext_pos", radio.ExtPos); form.Set("frag_threshold", radio.Frag)
 	} else {
 		form.Set("scs", radio.SCS); form.Set("tdwr_primary", radio.TDWR); form.Set("zerowaitDFS", radio.ZeroWaitDFS); form.Set("easymesh_adm_state", easyMesh)
 	}
-	_, err = r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
-	return err
+	for attempt := 0; attempt < 2; attempt++ {
+		form.Set("sessionKey", r.sessionKey)
+		data, requestErr := r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
+		if requestErr != nil {
+			if attempt == 0 && isRouterAuthError(requestErr) {
+				if loginErr := r.refreshSession(ctx); loginErr != nil { return loginErr }
+				continue
+			}
+			return requestErr
+		}
+		// Some firmware versions return an XML Result field on write. Treat
+		// a non-zero result as a possible expired session and retry once.
+		var acknowledgement struct { Result string `xml:"Result"` }
+		if xml.Unmarshal(data, &acknowledgement) == nil && acknowledgement.Result != "" && acknowledgement.Result != "0" {
+			if attempt == 0 {
+				if loginErr := r.refreshSession(ctx); loginErr != nil { return fmt.Errorf("router Wi-Fi write returned result %q; %w", acknowledgement.Result, loginErr) }
+				continue
+			}
+			return fmt.Errorf("router Wi-Fi write returned result %q after session refresh", acknowledgement.Result)
+		}
+		return nil
+	}
+	return errors.New("router Wi-Fi write failed after session refresh")
 }
 
 func (r *AskeyRouter) easyMeshState(ctx context.Context) (string, error) {
