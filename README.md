@@ -172,7 +172,7 @@ El estado de los destinos se mantiene en memoria. Al reiniciar el contenedor, lo
 
 ## Recuperación automática del Askey RTF8316VW
 
-La recuperación es opcional y se activa únicamente cuando `ROUTER_PASSWORD` tiene valor.
+La recuperación es opcional y se activa únicamente cuando el archivo indicado por `ROUTER_PASSWORD_FILE` contiene una contraseña. Un archivo vacío mantiene la recuperación desactivada.
 
 ### Condición de activación
 
@@ -182,14 +182,14 @@ La recuperación solo se inicia cuando **todos los destinos de `TARGETS` fallan 
 
 1. El monitor detecta la caída total y consecutiva de los DNS configurados.
 2. Envía una notificación de inicio mediante el cliente Telegram existente.
-3. Inicia sesión en la interfaz HTTP del Askey.
+3. Inicia sesión en la interfaz de administración del Askey.
 4. Lee la configuración LAN y DHCP actual.
 5. Actualiza los DNS DHCP con `DNS_PRIMARY` y `DNS_SECONDARY`, preservando la IP LAN, máscara, estado DHCP y rango DHCP existentes.
 6. Vuelve a leer la configuración del router y verifica los DNS guardados.
 7. Lee el estado y la configuración actual de las radios Wi-Fi de 2,4 GHz y 5 GHz.
-8. Desactiva ambas radios simultáneamente.
-9. Espera el tiempo configurado en `WIFI_OFF_SECONDS` (10 segundos por defecto).
-10. Restaura las radios que estaban habilitadas antes del reinicio.
+8. Envía la orden de desactivación a cada radio que estaba habilitada y relee su estado administrativo. Si alguna orden no queda confirmada, aborta e intenta restaurar las radios originales.
+9. Solo cuando ambas radios que estaban habilitadas se han confirmado apagadas, espera `WIFI_OFF_SECONDS` (10 segundos por defecto).
+10. Restaura las radios originales mediante contextos independientes con timeout, incluso si se cancela la recuperación.
 11. Comprueba el estado administrativo y operativo de ambas radios.
 12. Notifica el resultado de la recuperación por Telegram.
 
