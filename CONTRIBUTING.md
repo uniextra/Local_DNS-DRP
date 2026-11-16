@@ -44,7 +44,7 @@ La variable de entorno `ROUTER_MODEL` selecciona el adaptador. Utiliza un identi
 
 Usa exactamente el mismo identificador en el selector de adaptadores, los tests, la tabla de routers soportados del README y los ejemplos de Compose. No utilices como identificador un hostname, una IP, una versión de firmware ni un alias definido por cada usuario.
 
-Por compatibilidad, si se omite `ROUTER_MODEL` se selecciona `askey-rtf8316vw`. Cuando `ROUTER_PASSWORD` o `ROUTER_PASSWORD_FILE` habilita la recuperación, un identificador desconocido debe producir un error de configuración. Nunca debe caer por defecto en el adaptador Askey.
+Por compatibilidad, si se omite `ROUTER_MODEL` se selecciona `askey-rtf8316vw`. Cuando `ROUTER_PASSWORD` habilita la recuperación, un identificador desconocido debe producir un error de configuración. Nunca debe caer por defecto en el adaptador Askey.
 
 ## 4. Implementar un adaptador independiente
 
@@ -157,7 +157,7 @@ Un PR que añada un router debe actualizar:
 3. La secuencia de recuperación y las limitaciones específicas del router.
 4. El ejemplo de Compose solo cuando sea necesaria una nueva variable de configuración común.
 
-No añadas contraseñas, cookies, claves de sesión ni secretos específicos del router a `docker-compose.yml`. Para la contraseña se mantiene el mecanismo existente `ROUTER_PASSWORD_FILE`.
+El Compose de ejemplo define las credenciales mediante `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `ROUTER_PASSWORD` en `environment`. No incluyas valores reales de credenciales en los PR, issues, fixtures ni capturas; utiliza siempre placeholders. Los usuarios que desplieguen el proyecto deben mantener su `docker-compose.yml` privado y restringir el acceso al host Docker.
 
 ## 7. Abrir el pull request
 
