@@ -237,3 +237,32 @@ func TestLoadConfigValidatesRouterURL(t *testing.T) {
 		t.Fatalf("valid HTTPS router URL rejected: %v", err)
 	}
 }
+
+func TestLoadConfigValidatesFallbackDNS(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	for _, name := range []string{"DNS_PRIMARY", "DNS_SECONDARY"} {
+		for _, value := range []string{"dns.google", "1.1.1.1,8.8.8.8", "300.1.1.1", "not-an-ip"} {
+			t.Run(name+"="+value, func(t *testing.T) {
+				t.Setenv("DNS_PRIMARY", "1.1.1.1")
+				t.Setenv("DNS_SECONDARY", "8.8.8.8")
+				t.Setenv(name, value)
+				_, err := loadConfig()
+				if err == nil || !strings.Contains(err.Error(), name) {
+					t.Fatalf("loadConfig error = %v, want %s validation error", err, name)
+				}
+			})
+		}
+	}
+	t.Setenv("DNS_PRIMARY", "9.9.9.9")
+	t.Setenv("DNS_SECONDARY", "2606:4700:4700::1111")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("valid fallback DNS addresses rejected: %v", err)
+	}
+	if cfg.Router.DNSPrimary != "9.9.9.9" || cfg.Router.DNSSecondary != "2606:4700:4700::1111" {
+		t.Fatalf("fallback DNS = %q / %q", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+	}
+}

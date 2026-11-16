@@ -154,6 +154,17 @@ func loadConfig() (MonitorConfig, error) {
 		if cfg.Router.DNSSecondary == "" {
 			cfg.Router.DNSSecondary = "8.8.8.8"
 		}
+		// These values are written verbatim into the router's DHCP settings during
+		// an outage, so reject anything that is not a single IP address now rather
+		// than discovering the typo in the middle of an incident.
+		for _, setting := range []struct{ name, value string }{
+			{"DNS_PRIMARY", cfg.Router.DNSPrimary},
+			{"DNS_SECONDARY", cfg.Router.DNSSecondary},
+		} {
+			if net.ParseIP(setting.value) == nil {
+				return cfg, fmt.Errorf("%s must be a single IP address, got %q", setting.name, setting.value)
+			}
+		}
 		cfg.Router.WiFiOff, err = envDuration("WIFI_OFF_SECONDS", "10")
 		if err != nil {
 			return cfg, err

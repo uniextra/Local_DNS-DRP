@@ -459,6 +459,10 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 }
 
 func (r *AskeyRouter) Recover(ctx context.Context) error {
+	// Recoveries are rare, so never trust a session cached by an earlier one:
+	// the router expires sessions silently and may answer with a 200 login page
+	// that only looks like a malformed response further down the line.
+	r.invalidateSession()
 	if err := r.updateDNS(ctx); err != nil {
 		return err
 	}

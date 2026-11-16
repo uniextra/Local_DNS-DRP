@@ -19,6 +19,7 @@ type mockAskey struct {
 	dns                 string
 	dnsPostReturnsError bool
 	loginCount          int
+	dnsSessionKey       string
 }
 
 func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -69,6 +70,7 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		_ = req.ParseForm()
 		m.mu.Lock()
 		m.dns = req.Form.Get("lanHostDns")
+		m.dnsSessionKey = req.Form.Get("sessionKey")
 		fail := m.dnsPostReturnsError
 		m.mu.Unlock()
 		if fail {
@@ -262,5 +264,27 @@ func TestRouterHTTPErrorBodyIsTruncated(t *testing.T) {
 	// The message ends up in logs and in a Telegram notification.
 	if len(err.Error()) > 400 {
 		t.Fatalf("error message is %d bytes; the router response body must be truncated", len(err.Error()))
+	}
+}
+
+func TestRecoverLogsInAgainForEveryRecovery(t *testing.T) {
+	mock := &mockAskey{admin: [2]string{"1", "1"}, ignoreDisable: -1, dns: "9.9.9.9,149.112.112.112"}
+	router, closeServer := newMockRouter(t, mock, time.Millisecond)
+	defer closeServer()
+	// A session cached by an earlier recovery: routers expire these silently.
+	router.sessionKey = "expired-session"
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := router.Recover(context.Background()); err != nil {
+			t.Fatalf("recovery %d failed: %v", attempt, err)
+		}
+		mock.mu.Lock()
+		logins, dnsSessionKey := mock.loginCount, mock.dnsSessionKey
+		mock.mu.Unlock()
+		if logins != attempt {
+			t.Fatalf("after recovery %d: %d logins, want one fresh login per recovery", attempt, logins)
+		}
+		if dnsSessionKey != "test-session" {
+			t.Fatalf("recovery %d sent the DNS update with session key %q, want the freshly issued one", attempt, dnsSessionKey)
+		}
 	}
 }
