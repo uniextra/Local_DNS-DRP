@@ -1,54 +1,54 @@
-# Contributing router recovery adapters
+# Contribuir con adaptadores de recuperación para routers
 
-This project accepts contributions that add automatic recovery support for other router models and firmware versions. Router support is implemented as a dedicated adapter so that vendor-specific HTTP endpoints, authentication, payloads and state handling do not leak into the DNS monitor.
+Este proyecto acepta contribuciones para añadir recuperación automática en otros fabricantes, modelos y versiones de firmware. Cada router debe implementarse mediante un adaptador independiente, de forma que sus endpoints HTTP, autenticación, payloads y particularidades no se mezclen con el monitor DNS.
 
-Before starting, check the [supported router list](README.md#añadir-soporte-para-otro-router) and open an issue or discussion if you are unsure whether the model/firmware is already covered. A pull request is welcome once you have enough information to implement and test the adapter.
+Antes de empezar, consulta la [lista de routers soportados](README.md#añadir-soporte-para-otro-router). Si no tienes claro si tu revisión de hardware o firmware ya está cubierta, abre primero una incidencia o discusión. Cuando tengas información suficiente para implementar y probar el adaptador, puedes abrir directamente un pull request.
 
-## 1. Identify the exact router
+## 1. Identificar el router exacto
 
-Please include all of the following in the PR description:
+Incluye en la descripción del PR:
 
-- Manufacturer and exact commercial model (for example, `Askey RTF8316VW`).
-- Hardware revision/version printed on the label or shown in the administration UI.
-- Firmware version/build number, including ISP-customized firmware if applicable.
-- Country/region and ISP, when the firmware is ISP-provided.
-- The exact recovery actions the router supports and which ones your adapter implements:
-  - Update the DNS servers distributed by the router's DHCP service.
-  - Restart/re-enable Wi-Fi radios, if applicable.
-  - Read back and verify each change.
+- Fabricante y modelo comercial exacto (por ejemplo, `Askey RTF8316VW`).
+- Revisión/versión de hardware, indicada en la etiqueta o en la interfaz de administración.
+- Versión y número de build del firmware.
+- País/región y operador, cuando el firmware esté personalizado por el ISP.
+- Acciones de recuperación que soporta el router y cuáles implementa el adaptador:
+  - Actualizar los DNS que distribuye el servidor DHCP.
+  - Reiniciar o reactivar las radios Wi-Fi, si aplica.
+  - Leer el estado posterior y verificar cada cambio.
 
-Do not assume that two devices with the same retail model use the same API. Different hardware revisions, ISP builds and firmware versions can expose different endpoints or fields. If support is firmware-specific, state the tested firmware version explicitly.
+No des por hecho que dos unidades con el mismo nombre comercial utilizan la misma API. Las revisiones de hardware, los firmwares de operador y las versiones de firmware pueden cambiar endpoints y campos. Si el soporte depende de una versión concreta, indícalo expresamente y no lo presentes como compatible con todas las variantes.
 
-## 2. Gather evidence safely
+## 2. Recopilar evidencias sin exponer datos sensibles
 
-Useful evidence includes sanitized HTTP request/response examples, endpoint paths, relevant HTML/JavaScript fields, XML/JSON payloads, and before/after router state.
+Son útiles los ejemplos HTTP saneados de petición/respuesta, rutas de endpoints, campos relevantes de HTML/JavaScript, payloads XML/JSON y el estado del router antes y después del cambio.
 
-Remove or replace all sensitive information before attaching evidence:
+Antes de adjuntar evidencias, elimina o sustituye:
 
-- Passwords, usernames where they identify a person, API keys and tokens.
-- Cookies, session IDs, CSRF tokens and authorization headers.
-- Public IP addresses, serial numbers, MAC addresses and personally identifying account details.
-- Wi-Fi SSIDs and any private hostnames you do not want to disclose.
+- Contraseñas, nombres de usuario que identifiquen a una persona, claves API y tokens.
+- Cookies, identificadores de sesión, tokens CSRF y cabeceras de autorización.
+- IP públicas, números de serie, direcciones MAC y datos personales o de cuenta.
+- SSID y nombres privados que no quieras publicar.
 
-Use placeholders such as `<REDACTED>`, `192.0.2.10` and `example.invalid`. Never commit an unredacted HAR, browser capture, packet capture, router backup or configuration export. Do not include router credentials in the PR, issue, screenshots, test fixtures or logs.
+Utiliza marcadores como `<REDACTED>`, `192.0.2.10` y `example.invalid`. Nunca subas un HAR, captura de navegador, captura de paquetes, backup o exportación de configuración sin sanear. No incluyas credenciales del router en el PR, incidencias, fixtures de tests, capturas ni logs.
 
-Document whether the administration interface uses HTTP or HTTPS, how authentication works, how sessions expire, and how the router reports rejected or partially applied writes. HTTP 200 alone is not proof that a setting changed.
+Documenta si la interfaz de administración usa HTTP o HTTPS, cómo funciona la autenticación, cómo caducan las sesiones y cómo informa el firmware de las escrituras rechazadas o aplicadas parcialmente. Una respuesta HTTP 200 no demuestra por sí sola que el cambio se haya aplicado.
 
-## 3. Select a ROUTER_MODEL identifier
+## 3. Elegir el identificador ROUTER_MODEL
 
-The Docker environment variable `ROUTER_MODEL` selects the adapter. Use a stable lower-case kebab-case identifier based on manufacturer and model, for example:
+La variable de entorno `ROUTER_MODEL` selecciona el adaptador. Utiliza un identificador estable en minúsculas y formato kebab-case, basado en fabricante y modelo. Ejemplos:
 
 - `askey-rtf8316vw`
 - `tplink-archer-ax55`
 - `fritzbox-7530-ax`
 
-Use the same identifier in the adapter factory, tests, README supported-router table and Compose example. Do not use a hostname, IP address, firmware version or user-defined alias as the identifier.
+Usa exactamente el mismo identificador en el selector de adaptadores, los tests, la tabla de routers soportados del README y los ejemplos de Compose. No utilices como identificador un hostname, una IP, una versión de firmware ni un alias definido por cada usuario.
 
-For backwards compatibility, omitting `ROUTER_MODEL` selects `askey-rtf8316vw`. When `ROUTER_PASSWORD` or `ROUTER_PASSWORD_FILE` enables recovery, an unknown identifier is a configuration error. It must never fall back to the Askey adapter.
+Por compatibilidad, si se omite `ROUTER_MODEL` se selecciona `askey-rtf8316vw`. Cuando `ROUTER_PASSWORD` o `ROUTER_PASSWORD_FILE` habilita la recuperación, un identificador desconocido debe producir un error de configuración. Nunca debe caer por defecto en el adaptador Askey.
 
-## 4. Implement a dedicated adapter
+## 4. Implementar un adaptador independiente
 
-The common contract is:
+El contrato común es:
 
 ```go
 type RouterRecovery interface {
@@ -56,9 +56,9 @@ type RouterRecovery interface {
 }
 ```
 
-Add the vendor/model implementation in its own file, preferably named `router_<vendor>_<model>.go`. Keep the vendor-specific login, session, HTTP requests, parsing and write/read-back logic inside that adapter.
+Añade la implementación del fabricante/modelo en un fichero propio, preferiblemente con el nombre `router_<fabricante>_<modelo>.go`. Mantén dentro de ese adaptador el login, las sesiones, las peticiones HTTP, el parseo de respuestas y la lógica de lectura/verificación de escrituras.
 
-A simplified outline:
+Esquema simplificado:
 
 ```go
 type TPLinkArcherAX55Router struct {
@@ -74,18 +74,19 @@ func newTPLinkArcherAX55Router(cfg RouterConfig) RouterRecovery {
 }
 
 func (r *TPLinkArcherAX55Router) Recover(ctx context.Context) error {
-    // 1. Authenticate and establish a fresh session.
-    // 2. Read the current DHCP/Wi-Fi configuration.
-    // 3. Apply only the requested recovery changes.
-    // 4. Read back the configuration and verify the changes.
-    // 5. Restore any temporarily disabled radios, even on cancellation.
+    // 1. Autenticarse y crear una sesión nueva.
+    // 2. Leer la configuración actual de DHCP/Wi-Fi.
+    // 3. Aplicar únicamente los cambios de recuperación necesarios.
+    // 4. Volver a leer la configuración y verificar los cambios.
+    // 5. Restaurar las radios/servicios desactivados temporalmente,
+    //    incluso cuando se cancele el contexto.
     return nil
 }
 ```
 
-This is an illustration, not a working implementation. Use the router's documented or observed API; do not copy the Askey endpoints or payloads unless they are genuinely the same protocol.
+Es solo un ejemplo de estructura, no una implementación funcional. Utiliza la API documentada u observada del router; no copies los endpoints ni payloads del Askey salvo que hayas comprobado que realmente son el mismo protocolo.
 
-Register the adapter in `newRouterRecovery` in `router_recovery.go`:
+Registra el adaptador en `newRouterRecovery`, dentro de `router_recovery.go`:
 
 ```go
 switch model {
@@ -98,45 +99,45 @@ default:
 }
 ```
 
-Also add a named constant for the new model identifier. Keep the default model unchanged unless the project explicitly decides to change it.
+Añade también una constante con nombre para el nuevo identificador. No cambies el modelo por defecto salvo que exista una decisión explícita del proyecto para hacerlo.
 
-### Adapter requirements
+### Requisitos del adaptador
 
-A production adapter should:
+Un adaptador listo para producción debe:
 
-- Honour the supplied context and use bounded HTTP timeouts.
-- Never log credentials, cookies, session IDs or authorization data.
-- Validate the router response and reject malformed or unexpected state.
-- Read the existing settings before changing them; preserve unrelated LAN, DHCP and Wi-Fi settings.
-- Verify changes by reading the resulting state back. Do not trust HTTP 200 or an optimistic API response.
-- Treat ambiguous write timeouts as unknown outcomes and verify before retrying.
-- Handle expired sessions deliberately; do not loop indefinitely on login failures.
-- Restore radios/services that it temporarily disabled, including when the caller's context is cancelled. Use a separate bounded cleanup context where necessary.
-- Avoid rebooting the router or changing settings unrelated to the recovery objective.
-- Return actionable errors without leaking secrets.
-- Fail safely when the firmware/API is not the one tested by the adapter.
+- Respetar el contexto recibido y utilizar timeouts HTTP limitados.
+- No registrar contraseñas, cookies, IDs de sesión ni datos de autorización.
+- Validar las respuestas del router y rechazar estados inesperados o malformados.
+- Leer la configuración existente antes de cambiarla y preservar los parámetros LAN, DHCP y Wi-Fi que no formen parte de la recuperación.
+- Verificar cada cambio mediante una lectura posterior. No confiar solo en HTTP 200 o en una respuesta optimista de la API.
+- Tratar los timeouts de escritura como resultados ambiguos y comprobar el estado antes de reintentar.
+- Gestionar de forma explícita las sesiones caducadas, sin bucles infinitos de autenticación.
+- Restaurar las radios o servicios desactivados temporalmente, también si hay errores o se cancela el contexto. Cuando sea necesario, utilizar un contexto de limpieza independiente y con timeout.
+- Evitar reiniciar el router o cambiar parámetros ajenos al objetivo de recuperación.
+- Devolver errores útiles sin revelar secretos.
+- Fallar de forma segura cuando el firmware/API no corresponda con el que se ha probado.
 
-If the model does not have Wi-Fi radios or the requested operation is not applicable, document that limitation explicitly. Do not claim that an operation was performed when the hardware does not support it.
+Si el modelo no tiene radios Wi-Fi o alguna operación no aplica, documenta esa limitación. No informes de una operación como completada si el hardware no la soporta.
 
-## 5. Add automated tests
+## 5. Añadir tests automatizados
 
-Tests must run without a physical router and without Internet access. Use `net/http/httptest` or another deterministic fake router server and sanitized fixtures under `testdata/routers/<router-model>/` where appropriate.
+Los tests deben ejecutarse sin router físico y sin Internet. Utiliza `net/http/httptest` u otro servidor simulado determinista y, cuando corresponda, fixtures saneados bajo `testdata/routers/<router-model>/`.
 
-At minimum, cover:
+Como mínimo, cubre:
 
-- Successful authentication and recovery.
-- Rejected credentials and expired/invalid sessions.
-- Missing, malformed or unexpected response fields.
-- Successful writes followed by read-back verification.
-- HTTP 200 where the requested state was not actually applied.
-- Ambiguous write failures/timeouts, verifying state before retrying.
-- Preservation of unrelated router settings.
-- Cancellation/error handling and restoration of any temporarily disabled radios/services.
-- Rejection of unsupported model identifiers by the adapter selector.
+- Autenticación y recuperación correctas.
+- Credenciales rechazadas y sesiones caducadas o inválidas.
+- Campos ausentes, respuestas malformadas o inesperadas.
+- Escrituras correctas seguidas de lectura y verificación.
+- Respuestas HTTP 200 en las que el estado solicitado no se ha aplicado.
+- Errores/timeouts ambiguos de escritura, verificando el estado antes de reintentar.
+- Conservación de parámetros del router que no deban cambiar.
+- Cancelaciones/errores y restauración de radios o servicios desactivados temporalmente.
+- Rechazo de identificadores no soportados por el selector de adaptadores.
 
-Do not make tests contact a real router, use real credentials or depend on a user's home network. A physical-router test is useful as additional evidence, but it does not replace deterministic CI tests.
+No hagas que los tests contacten con un router real, utilicen credenciales reales o dependan de la red doméstica de un usuario. Una prueba adicional contra el router físico es útil, pero no sustituye los tests deterministas de CI.
 
-Run these checks before submitting:
+Ejecuta antes de enviar el PR:
 
 ```bash
 gofmt -w *.go
@@ -145,30 +146,30 @@ go vet ./...
 go build ./...
 ```
 
-The repository CI also builds the Docker image for `linux/amd64` and `linux/arm64`.
+La CI del repositorio también construye la imagen Docker para `linux/amd64` y `linux/arm64`.
 
-## 6. Update the documentation and Compose example
+## 6. Actualizar la documentación y Compose
 
-A router-support PR must update:
+Un PR que añada un router debe actualizar:
 
-1. The supported-router table in `README.md`, including the exact tested hardware/firmware revision.
-2. The `ROUTER_MODEL` environment variable description if the model list or selection behavior changes.
-3. The recovery sequence and any router-specific limitations.
-4. The Compose example only if a new common configuration variable is genuinely required.
+1. La tabla de routers soportados del `README.md`, incluyendo las revisiones de hardware/firmware realmente probadas.
+2. La descripción de `ROUTER_MODEL` si cambia la lista o el comportamiento de selección.
+3. La secuencia de recuperación y las limitaciones específicas del router.
+4. El ejemplo de Compose solo cuando sea necesaria una nueva variable de configuración común.
 
-Do not add router credentials, cookies, session keys, or model-specific secrets to `docker-compose.yml`. Use the existing `ROUTER_PASSWORD_FILE` mechanism for the router password.
+No añadas contraseñas, cookies, claves de sesión ni secretos específicos del router a `docker-compose.yml`. Para la contraseña se mantiene el mecanismo existente `ROUTER_PASSWORD_FILE`.
 
-## 7. Open the pull request
+## 7. Abrir el pull request
 
-Create a branch from the latest `main`, add the adapter and tests, and open a PR using the repository template. Include:
+Crea una rama basada en el `main` más reciente, añade el adaptador y sus tests, y abre un PR usando la plantilla del repositorio. Incluye:
 
-- Exact router model, hardware revision and firmware/build.
-- ISP/region if firmware is customized.
-- Sanitized evidence and a short explanation of the authentication/API flow.
-- The recovery operations implemented and any limitations.
-- Test coverage and the commands/results from the local test run.
-- Whether the adapter has also been tested against the physical router.
+- Modelo exacto, revisión de hardware y firmware/build.
+- Operador/región si el firmware está personalizado.
+- Evidencias saneadas y una explicación breve del flujo de autenticación/API.
+- Operaciones de recuperación implementadas y limitaciones conocidas.
+- Cobertura de tests y resultados de los comandos de validación.
+- Si se ha probado también contra el router físico.
 
-A contribution is not considered supported merely because the router model appears in the PR title. It must have a registered adapter, deterministic tests, updated documentation and passing CI. Maintainers may ask for further firmware-specific evidence before listing it as supported.
+Un router no se considera soportado solo porque aparezca en el título del PR. Debe tener un adaptador registrado, tests deterministas, documentación actualizada y CI satisfactoria. Los mantenedores pueden solicitar evidencias adicionales del firmware antes de incluirlo en la lista de modelos soportados.
 
-Thank you for helping make router recovery useful beyond the original Askey device.
+Gracias por ayudar a ampliar la recuperación automática más allá del Askey original.
