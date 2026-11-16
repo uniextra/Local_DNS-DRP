@@ -201,9 +201,16 @@ func validateDNSResponse(query, response []byte) error {
 	}
 
 	offset := responseEnd + 4
-	answerFound := false
+	type answerRecord struct {
+		owner string
+		recordType uint16
+		recordClass uint16
+		dataOffset int
+		dataEnd int
+	}
+	records := make([]answerRecord, 0, answerCount)
 	for i := 0; i < answerCount; i++ {
-		_, nameEnd, err := readDNSName(response, offset)
+		owner, nameEnd, err := readDNSName(response, offset)
 		if err != nil || nameEnd+10 > len(response) {
 			return errors.New("malformed DNS answer record")
 		}
@@ -215,30 +222,62 @@ func validateDNSResponse(query, response []byte) error {
 		if dataEnd > len(response) {
 			return errors.New("truncated DNS answer data")
 		}
-		if recordClass == 1 && recordType == queryType {
-			switch recordType {
-			case 1: // A
-				answerFound = dataLength == 4
-			case 28: // AAAA
-				answerFound = dataLength == 16
-			}
-		}
-		if recordClass == 1 && recordType == 5 { // CNAME
-			_, cnameEnd, cnameErr := readDNSName(response, dataOffset)
-			if cnameErr == nil && cnameEnd <= dataEnd {
-				answerFound = true
-			}
-		}
-		if answerFound {
-			break
-		}
+		records = append(records, answerRecord{
+			owner: strings.ToLower(owner), recordType: recordType, recordClass: recordClass,
+			dataOffset: dataOffset, dataEnd: dataEnd,
+		})
 		offset = dataEnd
 	}
-	if !answerFound {
-		return errors.New("DNS response contains no usable answer for the requested record type")
+
+	// Only accept records attached to the queried name or a CNAME target
+	// reachable from it; unrelated answer-section data is not proof of health.
+	reachable := map[string]bool{strings.ToLower(queryName): true}
+	for pass := 0; pass < len(records); pass++ {
+		changed := false
+		for _, record := range records {
+			if record.recordClass != 1 || record.recordType != 5 || !reachable[record.owner] {
+				continue
+			}
+			target, targetEnd, err := readDNSName(response, record.dataOffset)
+			if err == nil && targetEnd <= record.dataEnd {
+				target = strings.ToLower(target)
+				if !reachable[target] {
+					reachable[target] = true
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			break
+		}
 	}
-	return nil
-}
+
+	for _, record := range records {
+		if !reachable[record.owner] || record.recordClass != queryClass || record.recordType != queryType {
+			continue
+		}
+		switch record.recordType {
+		case 1: // A
+			if record.dataEnd-record.dataOffset == 4 {
+				return nil
+			}
+		case 28: // AAAA
+			if record.dataEnd-record.dataOffset == 16 {
+				return nil
+			}
+		}
+	}
+	// A valid CNAME chain is also an authoritative response to the query,
+	// even when the terminal address is not included in the answer section.
+	for _, record := range records {
+		if reachable[record.owner] && record.recordClass == 1 && record.recordType == 5 {
+			_, targetEnd, err := readDNSName(response, record.dataOffset)
+			if err == nil && targetEnd <= record.dataEnd {
+				return nil
+			}
+		}
+	}
+	return errors.New("DNS response contains no usable answer for the requested record type")
 
 func checkDNS(target Target, domain string, timeout time.Duration) (bool, string) {
 	id := uint16(time.Now().UnixNano()); query, err := makeDNSQuery(domain, id); if err != nil { return false, err.Error() }
