@@ -159,9 +159,11 @@ func loadConfig() (MonitorConfig, error) {
 	cfg.RecoveryEnabled = routerPassword != ""
 	if cfg.RecoveryEnabled {
 		cfg.Router = RouterConfig{
-			Model: routerModel,
-			URL: strings.TrimSpace(os.Getenv("ROUTER_URL")), Username: strings.TrimSpace(os.Getenv("ROUTER_USERNAME")),
-			Password: routerPassword, DNSPrimary: strings.TrimSpace(os.Getenv("DNS_PRIMARY")),
+			Model:        routerModel,
+			URL:          strings.TrimSpace(os.Getenv("ROUTER_URL")),
+			Username:     strings.TrimSpace(os.Getenv("ROUTER_USERNAME")),
+			Password:     routerPassword,
+			DNSPrimary:   strings.TrimSpace(os.Getenv("DNS_PRIMARY")),
 			DNSSecondary: strings.TrimSpace(os.Getenv("DNS_SECONDARY")),
 		}
 		if cfg.Router.URL == "" {
