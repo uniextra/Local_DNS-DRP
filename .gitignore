@@ -1,3 +1,8 @@
+# Environment files
 .env
 .env.*
 !.env.example
+
+# Local credential files mounted as Compose secrets
+/secrets/*.txt
+!/secrets/*.example
