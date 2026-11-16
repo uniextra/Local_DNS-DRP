@@ -224,7 +224,9 @@ Los destinos de `TARGETS` también son independientes: son las IP de AdGuard Hom
 - `read_only: true` mantiene el filesystem raíz en solo lectura.
 - `tmpfs` proporciona el espacio temporal necesario sin habilitar escritura general en el contenedor.
 
-**Credenciales:** el token de Telegram y la contraseña del router se escriben directamente en `docker-compose.yml`, tal como requiere esta configuración. Mantén el repositorio privado y no publiques credenciales reales en un repositorio público. Ten en cuenta que las variables de entorno del contenedor pueden ser visibles a usuarios con permisos suficientes sobre el host Docker.\n\n**Transporte hacia el router:** el Askey puede exponer su interfaz de administración únicamente por HTTP. En ese caso, la contraseña y los datos de sesión viajan sin cifrar y el programa registra un aviso al iniciar la recuperación. Utiliza `ROUTER_URL: https://...` solo si el router ofrece HTTPS con un certificado válido; no desactives la validación TLS para ocultar errores de certificado. Si el firmware solo soporta HTTP, limita el acceso de administración a una LAN de confianza y nunca expongas esa interfaz a Internet.
+**Credenciales:** el token de Telegram y la contraseña del router se escriben directamente en `docker-compose.yml`, tal como requiere esta configuración. Mantén el repositorio privado y no publiques credenciales reales en un repositorio público. Ten en cuenta que las variables de entorno del contenedor pueden ser visibles a usuarios con permisos suficientes sobre el host Docker.
+
+**Transporte hacia el router:** el Askey puede exponer su interfaz de administración únicamente por HTTP. En ese caso, la contraseña y los datos de sesión viajan sin cifrar y el programa registra un aviso al iniciar la recuperación. Utiliza `ROUTER_URL: https://...` solo si el router ofrece HTTPS con un certificado válido; no desactives la validación TLS para ocultar errores de certificado. Si el firmware solo soporta HTTP, limita el acceso de administración a una LAN de confianza y nunca expongas esa interfaz a Internet.
 
 ## Codex co-author attribution
 
