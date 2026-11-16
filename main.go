@@ -41,19 +41,6 @@ type State struct {
 	Healthy bool
 }
 
-// secretEnv reads NAME_FILE when configured (for Docker Compose secrets),
-// otherwise it falls back to NAME for backwards compatibility.
-func secretEnv(name string) (string, error) {
-	if filePath := strings.TrimSpace(os.Getenv(name + "_FILE")); filePath != "" {
-		value, err := os.ReadFile(filePath)
-		if err != nil {
-			return "", fmt.Errorf("%s_FILE: %w", name, err)
-		}
-		return strings.TrimSpace(string(value)), nil
-	}
-	return strings.TrimSpace(os.Getenv(name)), nil
-}
-
 func envDuration(name, fallback string) (time.Duration, error) {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
@@ -120,16 +107,10 @@ func loadConfig() (MonitorConfig, error) {
 		return cfg, errors.New("TARGETS contains no valid endpoints")
 	}
 	var err error
-	cfg.BotToken, err = secretEnv("TELEGRAM_BOT_TOKEN")
-	if err != nil {
-		return cfg, err
-	}
-	cfg.ChatID, err = secretEnv("TELEGRAM_CHAT_ID")
-	if err != nil {
-		return cfg, err
-	}
+	cfg.BotToken = strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	cfg.ChatID = strings.TrimSpace(os.Getenv("TELEGRAM_CHAT_ID"))
 	if cfg.BotToken == "" || cfg.ChatID == "" {
-		return cfg, errors.New("TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_FILE) and TELEGRAM_CHAT_ID (or TELEGRAM_CHAT_ID_FILE) are required")
+		return cfg, errors.New("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required")
 	}
 	cfg.Interval, err = envDuration("CHECK_INTERVAL", "60")
 	if err != nil {
@@ -150,10 +131,7 @@ func loadConfig() (MonitorConfig, error) {
 	if _, err := makeDNSQuery(cfg.TestDomain, 1); err != nil {
 		return cfg, fmt.Errorf("invalid DNS_TEST_DOMAIN: %w", err)
 	}
-	routerPassword, err := secretEnv("ROUTER_PASSWORD")
-	if err != nil {
-		return cfg, err
-	}
+	routerPassword := strings.TrimSpace(os.Getenv("ROUTER_PASSWORD"))
 	routerModel := normalizeRouterModel(os.Getenv("ROUTER_MODEL"))
 	cfg.Router.Model = routerModel
 	cfg.RecoveryEnabled = routerPassword != ""
