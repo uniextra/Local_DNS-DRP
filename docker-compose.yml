@@ -19,6 +19,7 @@ services:
       TELEGRAM_TIMEOUT: "10"
 
       # Optional automatic recovery for Askey RTF8316VW
+      ROUTER_MODEL: "askey-rtf8316vw"
       ROUTER_URL: "http://192.168.1.1"
       ROUTER_USERNAME: "1234"
       ROUTER_PASSWORD_FILE: /run/secrets/router_password

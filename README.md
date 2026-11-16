@@ -1,6 +1,6 @@
 # Local_DNS-DRP
 
-Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router Askey RTF8316VW cuando todos los servidores DNS monitorizados dejan de responder.
+Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router configurado cuando todos los servidores DNS monitorizados dejan de responder. Incluye un adaptador para el Askey RTF8316VW y una interfaz para incorporar otros modelos mediante contribuciones.
 
 El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen multi-arquitectura para Linux `amd64` y `arm64` (incluidas Raspberry Pi compatibles) y utiliza Telegram para notificar los cambios de estado y los resultados de recuperación.
 
@@ -9,7 +9,7 @@ El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen 
 - Monitoriza varias instancias DNS mediante consultas UDP directas a las IP configuradas.
 - Envía una notificación cuando un destino falla y otra cuando se recupera, sin repetir avisos mientras el estado no cambia.
 - Envía notificaciones de inicio y parada.
-- Activa opcionalmente la recuperación del Askey RTF8316VW cuando **todos** los destinos configurados están caídos durante tres comprobaciones consecutivas.
+- Activa opcionalmente la recuperación del router seleccionado mediante `ROUTER_MODEL` cuando **todos** los destinos configurados están caídos durante tres comprobaciones consecutivas.
 - Actualiza los DNS del servidor DHCP del router preservando la configuración LAN y el rango DHCP existente.
 - Desactiva y verifica las radios Wi-Fi de 2,4 GHz y 5 GHz; tras el intervalo configurado restaura las que estaban habilitadas. Las órdenes se envían y verifican secuencialmente porque no se ha validado una operación conjunta o concurrente del firmware.
 - Verifica la configuración DNS y el estado de las radios después del cambio.
@@ -23,7 +23,7 @@ El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen 
 - Docker Engine y Docker Compose.
 - Conectividad desde el contenedor hacia los destinos de `TARGETS` mediante UDP en el puerto DNS configurado.
 - Conectividad HTTPS saliente (TCP 443) hacia Telegram.
-- Para utilizar la recuperación automática: un router Askey RTF8316VW accesible desde el contenedor y sus credenciales web.
+- Para utilizar la recuperación automática: un modelo de router con adaptador implementado, accesible desde el contenedor y sus credenciales web. Actualmente solo está soportado `askey-rtf8316vw`.
 
 ## Despliegue
 
@@ -54,6 +54,7 @@ services:
       DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
 
+      ROUTER_MODEL: "askey-rtf8316vw"
       ROUTER_URL: "http://192.168.1.1"
       ROUTER_USERNAME: "1234"
       ROUTER_PASSWORD_FILE: /run/secrets/router_password
@@ -148,16 +149,17 @@ TARGETS: "home=192.168.1.2:53,lab=192.168.1.10:5353,office=[2001:db8::53]:53"
 
 Cada combinación IP/puerto debe ser única.
 
-### Recuperación del router Askey
+### Recuperación del router
 
 | Variable | Valor de ejemplo | Descripción |
 | --- | --- | --- |
-| `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router Askey. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
+| `ROUTER_MODEL` | `askey-rtf8316vw` | Identificador del adaptador que se utilizará. Si se omite, se usa `askey-rtf8316vw` por compatibilidad. Los identificadores no soportados provocan un error de configuración cuando la recuperación está habilitada. |
+| `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router seleccionado. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
 | `ROUTER_PASSWORD_FILE` | `/run/secrets/router_password` | Ruta del archivo con la contraseña web. Un archivo vacío desactiva la recuperación. |
 | `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. Debe ser una dirección IP. |
 | `DNS_SECONDARY` | `8.8.8.8` | DNS secundario que se configurará en DHCP. Debe ser una dirección IP. |
-| `WIFI_OFF_SECONDS` | `10` | Tiempo durante el que ambas radios Wi-Fi permanecen apagadas. |
+| `WIFI_OFF_SECONDS` | `10` | Tiempo de espera de apagado utilizado por los adaptadores que reinician radios Wi-Fi. |
 | `RECOVERY_COOLDOWN` | `900` | Tiempo mínimo entre intentos de recuperación, en segundos (15 minutos). |
 
 ## Cómo funciona el monitor DNS
@@ -172,7 +174,7 @@ El estado de los destinos se mantiene en memoria. Al reiniciar el contenedor, lo
 
 ## Recuperación automática del Askey RTF8316VW
 
-La recuperación es opcional y se activa únicamente cuando el archivo indicado por `ROUTER_PASSWORD_FILE` contiene una contraseña. Un archivo vacío mantiene la recuperación desactivada.
+La recuperación es opcional y se activa únicamente cuando el archivo indicado por `ROUTER_PASSWORD_FILE` contiene una contraseña. Un archivo vacío mantiene la recuperación desactivada. `ROUTER_MODEL` selecciona el adaptador; no se autodetecta el router a partir de su URL ni de la respuesta HTTP.
 
 ### Condición de activación
 
@@ -284,6 +286,27 @@ one-commit opt-out with `SKIP_AI_COAUTHORS=1`.
 Commits created through GitHub's web interface or an API must include the
 same trailer in the commit message; local Git hooks do not run for those
 operations.
+
+## Añadir soporte para otro router
+
+El soporte de recuperación es extensible. Cada fabricante/modelo debe tener un adaptador independiente que implemente la interfaz `RouterRecovery`. No añadas comprobaciones de fabricante repartidas por el monitor ni reutilices las peticiones del Askey para un router distinto.
+
+Lee la guía de [CONTRIBUTING.md](CONTRIBUTING.md), que explica qué información recopilar, cómo implementar y probar un adaptador y qué aportar en el PR.
+
+El identificador se selecciona mediante `ROUTER_MODEL`. Actualmente:
+
+| Identificador | Router | Estado |
+| --- | --- | --- |
+| `askey-rtf8316vw` | Askey RTF8316VW | Soportado |
+
+Ejemplo en Docker Compose:
+
+```yaml
+environment:
+  ROUTER_MODEL: "askey-rtf8316vw"
+```
+
+Si `ROUTER_MODEL` no se define, se conserva ese valor por defecto. Un modelo desconocido no activa ningún adaptador alternativo y provoca un error de configuración cuando hay una contraseña de router configurada.
 
 ## Imagen Docker y arquitecturas
 

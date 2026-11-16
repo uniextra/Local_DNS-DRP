@@ -16,12 +16,51 @@ import (
 	"time"
 )
 
+// RouterModelAskeyRTF8316VW is the stable ROUTER_MODEL identifier for the
+// currently supported Askey RTF8316VW firmware adapter.
+const RouterModelAskeyRTF8316VW = "askey-rtf8316vw"
+
+// DefaultRouterModel preserves the original Askey recovery behavior when
+// ROUTER_MODEL is omitted from existing deployments.
+const DefaultRouterModel = RouterModelAskeyRTF8316VW
+
+// RouterRecovery is implemented by each router-specific recovery adapter.
+// Keep vendor/firmware HTTP details behind this interface.
+type RouterRecovery interface {
+	Recover(context.Context) error
+}
+
 type RouterConfig struct {
+	Model                    string
 	URL, Username, Password  string
 	DNSPrimary, DNSSecondary string
 	WiFiOff                  time.Duration
 	FailureThreshold         int
 	Cooldown                 time.Duration
+}
+
+// normalizeRouterModel converts the supplied model identifier into its
+// canonical form. Identifiers are documented as lower-case slugs.
+func normalizeRouterModel(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if model == "" {
+		return DefaultRouterModel
+	}
+	return model
+}
+
+// newRouterRecovery selects the adapter for ROUTER_MODEL. Unknown models are
+// rejected instead of accidentally sending Askey-specific requests to another
+// manufacturer's router.
+func newRouterRecovery(cfg RouterConfig) (RouterRecovery, error) {
+	model := normalizeRouterModel(cfg.Model)
+	cfg.Model = model
+	switch model {
+	case RouterModelAskeyRTF8316VW:
+		return newAskeyRouter(cfg), nil
+	default:
+		return nil, fmt.Errorf("unsupported ROUTER_MODEL %q; currently supported model: %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW)
+	}
 }
 
 type AskeyRouter struct {
