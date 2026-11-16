@@ -18,6 +18,7 @@ type mockAskey struct {
 	ignoreDisable int
 	dns string
 	dnsPostReturnsError bool
+	loginCount int
 }
 
 func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -36,6 +37,11 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		id := 0
 		if req.Form.Get("dpm_cfg_wifi_id") == "1" { id = 1 }
 		admin := req.Form.Get("radio_adm_state")
+		if req.Form.Get("sessionKey") != "test-session" {
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<cbSetWifi><Result>1</Result></cbSetWifi>`))
+			return
+		}
 		m.mu.Lock()
 		if !(id == m.ignoreDisable && admin == "0") { m.admin[id] = admin }
 		m.mu.Unlock()
@@ -49,6 +55,9 @@ func (m *mockAskey) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		m.mu.Unlock()
 		_, _ = fmt.Fprintf(w, `<script>var sessionKey = "test-session"; var ethIpAddress = "192.168.1.1"; var ethSubnetMask = "255.255.255.0"; var DHCPActive = "1"; var startIPAddress = "192.168.1.100"; var endIPAddress = "192.168.1.200"; var gatewayIPaddress = "192.168.1.1"; var lanHostDns = "%s";</script>`, dns)
 	case "/cgi-bin/te_acceso_router.cgi":
+		m.mu.Lock()
+		m.loginCount++
+		m.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	case "/cgi-bin/te_mapa_red_local.cgi":
 		_ = req.ParseForm()
@@ -155,6 +164,18 @@ func TestUpdateDNSVerifiesAppliedChangeAfterHTTPError(t *testing.T) {
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
 	if mock.dns != "1.1.1.1,8.8.8.8" { t.Fatalf("router DNS = %q, want requested DNS", mock.dns) }
+}
+
+func TestWiFiWriteRefreshesExpiredSessionOnce(t *testing.T) {
+	mock := &mockAskey{admin:[2]string{"1","1"}, ignoreDisable:-1}
+	router, closeServer := newMockRouter(t, mock, time.Millisecond)
+	defer closeServer()
+	router.sessionKey = "expired-session"
+	if err := router.restartWiFi(context.Background()); err != nil { t.Fatalf("restartWiFi failed after session refresh: %v", err) }
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	if mock.loginCount != 1 { t.Fatalf("login attempts = %d, want one session refresh", mock.loginCount) }
+	if mock.admin != [2]string{"1","1"} { t.Fatalf("radio states after restart = %v, want both enabled", mock.admin) }
 }
 
 func TestWiFiOffDefaultIsTenSeconds(t *testing.T) {
