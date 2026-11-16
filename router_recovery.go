@@ -190,7 +190,7 @@ func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string
 	} else {
 		form.Set("scs", radio.SCS); form.Set("tdwr_primary", radio.TDWR); form.Set("zerowaitDFS", radio.ZeroWaitDFS); form.Set("easymesh_adm_state", easyMesh)
 	}
-	_, err := r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
+	_, err = r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
 	return err
 }
 
