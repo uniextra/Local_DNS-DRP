@@ -54,6 +54,7 @@ services:
       DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
 
+      ROUTER_MODEL: "askey-rtf8316vw"
       ROUTER_URL: "http://192.168.1.1"
       ROUTER_USERNAME: "1234"
       ROUTER_PASSWORD_FILE: /run/secrets/router_password
@@ -153,12 +154,12 @@ Cada combinación IP/puerto debe ser única.
 | Variable | Valor de ejemplo | Descripción |
 | --- | --- | --- |
 | `ROUTER_MODEL` | `askey-rtf8316vw` | Identificador del adaptador que se utilizará. Si se omite, se usa `askey-rtf8316vw` por compatibilidad. Los identificadores no soportados provocan un error de configuración cuando la recuperación está habilitada. |
-| `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router Askey. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
+| `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router seleccionado. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
 | `ROUTER_PASSWORD_FILE` | `/run/secrets/router_password` | Ruta del archivo con la contraseña web. Un archivo vacío desactiva la recuperación. |
 | `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. Debe ser una dirección IP. |
 | `DNS_SECONDARY` | `8.8.8.8` | DNS secundario que se configurará en DHCP. Debe ser una dirección IP. |
-| `WIFI_OFF_SECONDS` | `10` | Tiempo durante el que ambas radios Wi-Fi permanecen apagadas. |
+| `WIFI_OFF_SECONDS` | `10` | Tiempo de espera de apagado utilizado por los adaptadores que reinician radios Wi-Fi. |
 | `RECOVERY_COOLDOWN` | `900` | Tiempo mínimo entre intentos de recuperación, en segundos (15 minutos). |
 
 ## Cómo funciona el monitor DNS
