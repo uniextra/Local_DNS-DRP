@@ -411,3 +411,45 @@ func TestLoadConfigReadsCredentialFiles(t *testing.T) {
 		t.Fatal("router password file was not loaded")
 	}
 }
+
+func TestLoadConfigDefaultsRouterModel(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	t.Setenv("ROUTER_MODEL", "")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Router.Model != RouterModelAskeyRTF8316VW {
+		t.Fatalf("router model = %q, want %q", cfg.Router.Model, RouterModelAskeyRTF8316VW)
+	}
+}
+
+func TestLoadConfigUsesExplicitRouterModel(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	t.Setenv("ROUTER_MODEL", "ASKEY-RTF8316VW")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Router.Model != RouterModelAskeyRTF8316VW {
+		t.Fatalf("router model = %q, want normalized %q", cfg.Router.Model, RouterModelAskeyRTF8316VW)
+	}
+}
+
+func TestLoadConfigRejectsUnsupportedRouterModelWhenRecoveryEnabled(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	t.Setenv("ROUTER_MODEL", "unknown-router-123")
+	_, err := loadConfig()
+	if err == nil || !strings.Contains(err.Error(), "unsupported ROUTER_MODEL") {
+		t.Fatalf("loadConfig error = %v, want unsupported ROUTER_MODEL error", err)
+	}
+}
