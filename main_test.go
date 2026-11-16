@@ -266,3 +266,73 @@ func TestLoadConfigValidatesFallbackDNS(t *testing.T) {
 		t.Fatalf("fallback DNS = %q / %q", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
 	}
 }
+
+func TestFallbackDNSAnswers(t *testing.T) {
+	const timeout = 2 * time.Second
+	newCfg := func(primary, secondary string) MonitorConfig {
+		return MonitorConfig{
+			TestDomain: "example.com",
+			DNSTimeout: timeout,
+			Router:     RouterConfig{DNSPrimary: primary, DNSSecondary: secondary},
+		}
+	}
+	tests := []struct {
+		name       string
+		cfg        MonitorConfig
+		answering  map[string]bool
+		wantOK     bool
+		wantProbed []string
+	}{
+		{
+			name:       "no fallback resolver answers: the outage is upstream",
+			cfg:        newCfg("1.1.1.1", "2606:4700:4700::1111"),
+			wantOK:     false,
+			wantProbed: []string{"1.1.1.1:53", "[2606:4700:4700::1111]:53"},
+		},
+		{
+			name:       "only the secondary answers",
+			cfg:        newCfg("1.1.1.1", "8.8.8.8"),
+			answering:  map[string]bool{"8.8.8.8:53": true},
+			wantOK:     true,
+			wantProbed: []string{"1.1.1.1:53", "8.8.8.8:53"},
+		},
+		{
+			name:       "primary answers: the secondary is not probed",
+			cfg:        newCfg("1.1.1.1", "8.8.8.8"),
+			answering:  map[string]bool{"1.1.1.1:53": true},
+			wantOK:     true,
+			wantProbed: []string{"1.1.1.1:53"},
+		},
+		{
+			name:       "identical primary and secondary are probed once",
+			cfg:        newCfg("1.1.1.1", "1.1.1.1"),
+			wantOK:     false,
+			wantProbed: []string{"1.1.1.1:53"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var probed []string
+			probe := func(target Target, domain string, got time.Duration) (bool, string) {
+				probed = append(probed, target.Addr)
+				if domain != "example.com" || got != timeout {
+					t.Errorf("probe(%s) used domain %q and timeout %s", target.Addr, domain, got)
+				}
+				if tc.answering[target.Addr] {
+					return true, "DNS query successful"
+				}
+				return false, "i/o timeout"
+			}
+			ok, detail := fallbackDNSAnswers(tc.cfg, probe)
+			if ok != tc.wantOK {
+				t.Fatalf("fallbackDNSAnswers = %v (%s), want %v", ok, detail, tc.wantOK)
+			}
+			if strings.Join(probed, ",") != strings.Join(tc.wantProbed, ",") {
+				t.Fatalf("probed %v, want %v", probed, tc.wantProbed)
+			}
+			if !ok && !strings.Contains(detail, "i/o timeout") {
+				t.Fatalf("detail %q does not explain why the fallback resolvers failed", detail)
+			}
+		})
+	}
+}

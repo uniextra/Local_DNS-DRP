@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -385,6 +386,28 @@ func checkDNS(target Target, domain string, timeout time.Duration) (bool, string
 	return true, "DNS query successful"
 }
 
+// fallbackDNSAnswers reports whether at least one of the resolvers that a
+// recovery would install in the router's DHCP settings answers the monitor's
+// test query. When none does, the outage is upstream of the LAN (ISP/WAN):
+// pointing DHCP at those resolvers and restarting Wi-Fi cannot fix that, and
+// would only disconnect every Wi-Fi client for nothing.
+func fallbackDNSAnswers(cfg MonitorConfig, probe func(Target, string, time.Duration) (bool, string)) (bool, string) {
+	var failures []string
+	var probed []string
+	for _, ip := range []string{cfg.Router.DNSPrimary, cfg.Router.DNSSecondary} {
+		if ip == "" || slices.Contains(probed, ip) {
+			continue
+		}
+		probed = append(probed, ip)
+		healthy, detail := probe(Target{Name: ip, Addr: net.JoinHostPort(ip, "53")}, cfg.TestDomain, cfg.DNSTimeout)
+		if healthy {
+			return true, ""
+		}
+		failures = append(failures, fmt.Sprintf("%s: %s", ip, detail))
+	}
+	return false, strings.Join(failures, "; ")
+}
+
 type Telegram struct {
 	token  string
 	chatID string
@@ -475,7 +498,7 @@ func run(ctx context.Context, cfg MonitorConfig) {
 	}
 	consecutiveAllDown := 0
 	lastRecovery := time.Time{}
-	recoveryRunning := false
+	fallbackSkipNotified := false
 	for _, target := range cfg.Targets {
 		lines = append(lines, fmt.Sprintf("• %s: %s", target.Name, target.Addr))
 	}
@@ -508,21 +531,32 @@ func run(ctx context.Context, cfg MonitorConfig) {
 				consecutiveAllDown++
 			} else {
 				consecutiveAllDown = 0
+				fallbackSkipNotified = false
 			}
-			if allDown && consecutiveAllDown >= cfg.Router.FailureThreshold && !recoveryRunning && time.Since(lastRecovery) >= cfg.Router.Cooldown {
-				recoveryRunning = true
-				lastRecovery = time.Now()
-				notify(tg, fmt.Sprintf("🚨 ADGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
-				recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-				err := router.Recover(recoveryCtx)
-				cancel()
-				recoveryRunning = false
-				if err != nil {
-					log.Printf("ERROR Askey router recovery failed: %v", err)
-					notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+			if allDown && consecutiveAllDown >= cfg.Router.FailureThreshold && time.Since(lastRecovery) >= cfg.Router.Cooldown {
+				if answers, detail := fallbackDNSAnswers(cfg, checkDNS); !answers {
+					// Not an AdGuard problem: the public resolvers are unreachable too.
+					// Leave the router alone and look again on the next cycle; the
+					// cooldown is only consumed by a recovery that actually starts.
+					log.Printf("WARN Askey router recovery skipped: fallback DNS %s / %s do not answer either (%s)", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary, detail)
+					if !fallbackSkipNotified {
+						fallbackSkipNotified = true
+						notify(tg, fmt.Sprintf("🟠 Todos los DNS monitorizados están caídos, pero los DNS de respaldo (%s / %s) tampoco responden: parece una caída de internet, no de AdGuard. No se modifica el router; se reintentará en cada comprobación.", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					}
 				} else {
-					log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
-					notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					fallbackSkipNotified = false
+					lastRecovery = time.Now()
+					notify(tg, fmt.Sprintf("🚨 AdGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
+					recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+					err := router.Recover(recoveryCtx)
+					cancel()
+					if err != nil {
+						log.Printf("ERROR Askey router recovery failed: %v", err)
+						notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+					} else {
+						log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+						notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					}
 				}
 			}
 		}
