@@ -13,7 +13,9 @@ permissions:
 
 concurrency:
   group: dockerhub-publish-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel an in-flight publish when another main push arrives.
+  # Let the current image finish; GitHub will keep the latest pending run.
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -66,3 +68,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify published image architectures and entrypoint
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/local-dns-drp:latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in linux/amd64 linux/arm64; do
+            echo "Checking ${platform} image..."
+            docker pull --platform "${platform}" "${IMAGE}"
+            architecture="$(docker image inspect --format '{{.Architecture}}' "${IMAGE}")"
+            entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "${IMAGE}")"
+            expected_arch="${platform#linux/}"
+            if [[ "${architecture}" != "${expected_arch}" ]]; then
+              echo "Unexpected architecture: ${architecture}; expected ${expected_arch}"
+              exit 1
+            fi
+            if [[ "${entrypoint}" != '["/usr/local/bin/adguard-dns-monitor"]' ]]; then
+              echo "Unexpected image entrypoint: ${entrypoint}"
+              exit 1
+            fi
+            echo "Verified ${platform}: ${entrypoint}"
+          done
