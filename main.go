@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -93,6 +94,10 @@ func loadConfig() (MonitorConfig, error) {
 			DNSSecondary: strings.TrimSpace(os.Getenv("DNS_SECONDARY")),
 		}
 		if cfg.Router.URL == "" { cfg.Router.URL = "http://192.168.1.1" }
+		parsedRouterURL, parseErr := url.Parse(cfg.Router.URL)
+		if parseErr != nil || parsedRouterURL.Host == "" || (parsedRouterURL.Scheme != "http" && parsedRouterURL.Scheme != "https") || parsedRouterURL.User != nil {
+			return cfg, errors.New("ROUTER_URL must be an absolute HTTP(S) URL without embedded credentials")
+		}
 		if cfg.Router.Username == "" { cfg.Router.Username = "1234" }
 		if cfg.Router.DNSPrimary == "" { cfg.Router.DNSPrimary = "1.1.1.1" }
 		if cfg.Router.DNSSecondary == "" { cfg.Router.DNSSecondary = "8.8.8.8" }
@@ -258,7 +263,11 @@ func run(ctx context.Context, cfg MonitorConfig) {
 	states := make(map[string]State, len(cfg.Targets))
 	var lines []string
 	var router *AskeyRouter
-	if cfg.RecoveryEnabled { router = newAskeyRouter(cfg.Router); log.Printf("Askey router recovery enabled for %s", cfg.Router.URL) } else { log.Printf("Askey router recovery disabled: ROUTER_PASSWORD is not set") }
+	if cfg.RecoveryEnabled {
+		router = newAskeyRouter(cfg.Router)
+		log.Printf("Askey router recovery enabled for %s", cfg.Router.URL)
+		if strings.HasPrefix(strings.ToLower(cfg.Router.URL), "http://") { log.Printf("WARN ROUTER_URL uses plain HTTP: router credentials and session data are not encrypted in transit") }
+	} else { log.Printf("Askey router recovery disabled: ROUTER_PASSWORD is not set") }
 	consecutiveAllDown := 0
 	lastRecovery := time.Time{}
 	recoveryRunning := false
