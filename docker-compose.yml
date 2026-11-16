@@ -1,6 +1,7 @@
 services:
   adguard-dns-monitor:
     image: uniextra/local-dns-drp:latest
+    pull_policy: always
     container_name: adguard-dns-monitor
     restart: unless-stopped
     environment:
