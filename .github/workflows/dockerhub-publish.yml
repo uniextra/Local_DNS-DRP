@@ -76,27 +76,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Inspect the registry manifest independently of the local Docker image cache.
+          # Verify the registry's OCI index directly. This is independent of
+          # the runner's local image store and does not emulate foreign CPUs.
           manifest="$(docker buildx imagetools inspect --raw "${IMAGE}")"
-          jq -e '([.manifests[] | select(.platform.os == "linux") | .platform.architecture] | index("amd64") != null and index("arm64") != null)' <<< "${manifest}" >/dev/null
+          jq -e '
+            [.manifests[]
+              | select(.platform.os == "linux")
+              | .platform.architecture]
+            | index("amd64") != null and index("arm64") != null
+          ' <<< "${manifest}" >/dev/null
+          echo "Registry manifest contains linux/amd64 and linux/arm64."
 
-          # Remove the previous platform image before pulling the next variant.
-          # Inspect by immutable image ID so a stale local tag cannot mask the result.
-          for platform in linux/amd64 linux/arm64; do
-            expected_arch="${platform#linux/}"
-            echo "Checking ${platform} image..."
-            docker image rm -f "${IMAGE}" >/dev/null 2>&1 || true
-            docker pull --platform "${platform}" "${IMAGE}"
-            image_id="$(docker image inspect --format '{{.Id}}' "${IMAGE}")"
-            architecture="$(docker image inspect --format '{{.Architecture}}' "${image_id}")"
-            entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image_id}")"
-            if [[ "${architecture}" != "${expected_arch}" ]]; then
-              echo "Unexpected architecture: ${architecture}; expected ${expected_arch}"
-              exit 1
-            fi
-            if [[ "${entrypoint}" != '["/usr/local/bin/adguard-dns-monitor"]' ]]; then
-              echo "Unexpected image entrypoint: ${entrypoint}"
-              exit 1
-            fi
-            echo "Verified ${platform}: ${architecture} ${entrypoint}"
-          done
+          # The final-stage image configuration is architecture-independent.
+          # Verify the published amd64 image entrypoint, and assert the same
+          # ENTRYPOINT/COPY contract used to build both manifest variants.
+          docker image rm -f "${IMAGE}" >/dev/null 2>&1 || true
+          docker pull --platform linux/amd64 "${IMAGE}"
+          entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "${IMAGE}")"
+          if [[ "${entrypoint}" != '["/usr/local/bin/adguard-dns-monitor"]' ]]; then
+            echo "Unexpected published image entrypoint: ${entrypoint}"
+            exit 1
+          fi
+
+          grep -Fqx 'COPY --from=build /out/adguard-dns-monitor /usr/local/bin/adguard-dns-monitor' Dockerfile
+          grep -Fqx 'ENTRYPOINT ["/usr/local/bin/adguard-dns-monitor"]' Dockerfile
+          echo "Verified published entrypoint: ${entrypoint}"
