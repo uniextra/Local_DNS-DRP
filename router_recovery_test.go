@@ -248,3 +248,19 @@ func TestRouterRecoveryDisabledWithoutPassword(t *testing.T) {
 		t.Fatal("router recovery must be disabled without ROUTER_PASSWORD")
 	}
 }
+
+func TestRouterHTTPErrorBodyIsTruncated(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, strings.Repeat("<html>router error page</html>\n", 5000), http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	router := newAskeyRouter(RouterConfig{URL: server.URL})
+	_, err := router.request(context.Background(), http.MethodGet, "/te_wifi.asp", nil)
+	if err == nil || !strings.Contains(err.Error(), "router HTTP 500") {
+		t.Fatalf("error = %v, want a router HTTP 500 error", err)
+	}
+	// The message ends up in logs and in a Telegram notification.
+	if len(err.Error()) > 400 {
+		t.Fatalf("error message is %d bytes; the router response body must be truncated", len(err.Error()))
+	}
+}

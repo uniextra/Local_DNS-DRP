@@ -383,19 +383,48 @@ type Telegram struct {
 func newTelegram(cfg MonitorConfig) *Telegram {
 	return &Telegram{token: cfg.BotToken, chatID: cfg.ChatID, client: &http.Client{Timeout: cfg.TelegramTimeout}}
 }
+
+// telegramMaxMessageRunes keeps messages safely below the 4096-character limit
+// of the Telegram Bot API, which rejects longer texts outright.
+const telegramMaxMessageRunes = 4000
+
+// truncateRunes shortens s to at most max runes, marking the cut with an ellipsis.
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if max < 1 || len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+// redact removes the bot token from an error. net/http wraps failures in a
+// *url.Error whose text embeds the full request URL, and the token is part of
+// that URL, so logging the raw error would leak the credential.
+func (t *Telegram) redact(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	text := err.Error()
+	if t.token != "" {
+		text = strings.ReplaceAll(text, t.token, "[REDACTED]")
+	}
+	return errors.New("Telegram request failed: " + text)
+}
+
 func (t *Telegram) send(message string) error {
-	body, err := json.Marshal(map[string]any{"chat_id": t.chatID, "text": message, "disable_web_page_preview": true})
+	body, err := json.Marshal(map[string]any{"chat_id": t.chatID, "text": truncateRunes(message, telegramMaxMessageRunes), "disable_web_page_preview": true})
 	if err != nil {
 		return err
 	}
 	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+t.token+"/sendMessage", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return t.redact(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return t.redact(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
