@@ -15,7 +15,7 @@ El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen 
 - Verifica la configuración DNS y el estado de las radios después del cambio.
 - Aplica un cooldown para evitar recuperaciones repetidas durante una caída prolongada.
 - Reutiliza el cliente Telegram existente para informar del inicio y resultado de la recuperación.
-- Lee el token de Telegram, el chat ID y la contraseña del router desde Docker Compose secrets montados como archivos.
+- Configura las credenciales de Telegram y del router directamente mediante variables de entorno en `docker-compose.yml`.
 - Publica imágenes Docker multi-arquitectura `linux/amd64` y `linux/arm64`.
 
 ## Requisitos
