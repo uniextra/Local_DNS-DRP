@@ -380,8 +380,8 @@ func TestLoadConfigReadsCredentialFiles(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
 		"telegram": filepath.Join(dir, "telegram"),
-		"chat": filepath.Join(dir, "chat"),
-		"router": filepath.Join(dir, "router"),
+		"chat":     filepath.Join(dir, "chat"),
+		"router":   filepath.Join(dir, "router"),
 	}
 	values := map[string]string{
 		"telegram": "bot-token",
