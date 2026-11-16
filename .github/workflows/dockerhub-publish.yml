@@ -75,12 +75,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Inspect the registry manifest independently of the local Docker image cache.
+          manifest="$(docker buildx imagetools inspect --raw "${IMAGE}")"
+          jq -e '([.manifests[] | select(.platform.os == "linux") | .platform.architecture] | index("amd64") != null and index("arm64") != null)' <<< "${manifest}" >/dev/null
+
+          # Remove the previous platform image before pulling the next variant.
+          # Inspect by immutable image ID so a stale local tag cannot mask the result.
           for platform in linux/amd64 linux/arm64; do
-            echo "Checking ${platform} image..."
-            docker pull --platform "${platform}" "${IMAGE}"
-            architecture="$(docker image inspect --format '{{.Architecture}}' "${IMAGE}")"
-            entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "${IMAGE}")"
             expected_arch="${platform#linux/}"
+            echo "Checking ${platform} image..."
+            docker image rm -f "${IMAGE}" >/dev/null 2>&1 || true
+            docker pull --platform "${platform}" "${IMAGE}"
+            image_id="$(docker image inspect --format '{{.Id}}' "${IMAGE}")"
+            architecture="$(docker image inspect --format '{{.Architecture}}' "${image_id}")"
+            entrypoint="$(docker image inspect --format '{{json .Config.Entrypoint}}' "${image_id}")"
             if [[ "${architecture}" != "${expected_arch}" ]]; then
               echo "Unexpected architecture: ${architecture}; expected ${expected_arch}"
               exit 1
@@ -89,5 +98,5 @@ jobs:
               echo "Unexpected image entrypoint: ${entrypoint}"
               exit 1
             fi
-            echo "Verified ${platform}: ${entrypoint}"
+            echo "Verified ${platform}: ${architecture} ${entrypoint}"
           done
