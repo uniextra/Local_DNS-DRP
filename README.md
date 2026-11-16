@@ -38,11 +38,11 @@ Edita los valores de ejemplo en el Compose:
 
 ```yaml
 services:
-  local-dns-monitor:
+  adguard-dns-monitor:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: local-dns-monitor
+    container_name: adguard-dns-monitor
     restart: unless-stopped
     environment:
       # DNS targets: comma-separated name=IP[:port] entries
@@ -136,8 +136,8 @@ Cada combinación IP/puerto debe ser única.
 | `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router Askey. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
 | `ROUTER_PASSWORD` | Vacío | Contraseña web. La recuperación se activa cuando esta variable tiene valor. |
-| `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. |
-| `DNS_SECONDARY` | `8.8.8.8` | DNS secundario que se configurará en DHCP. |
+| `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. Debe ser una dirección IP. |
+| `DNS_SECONDARY` | `8.8.8.8` | DNS secundario que se configurará en DHCP. Debe ser una dirección IP. |
 | `WIFI_OFF_SECONDS` | `10` | Tiempo durante el que ambas radios Wi-Fi permanecen apagadas. |
 | `RECOVERY_COOLDOWN` | `900` | Tiempo mínimo entre intentos de recuperación, en segundos (15 minutos). |
 
@@ -157,24 +157,29 @@ La recuperación es opcional y se activa únicamente cuando `ROUTER_PASSWORD` ti
 
 ### Condición de activación
 
-La recuperación solo se inicia cuando **todos los destinos de `TARGETS` fallan durante tres comprobaciones consecutivas**. La caída de un único DNS no debe provocar el reinicio del router si otro destino sigue respondiendo.
+La recuperación solo se inicia cuando **todos los destinos de `TARGETS` fallan durante tres comprobaciones consecutivas** y, además, **al menos uno de `DNS_PRIMARY` / `DNS_SECONDARY` responde** a la misma consulta de prueba (UDP, puerto 53). La caída de un único DNS no debe provocar el reinicio del router si otro destino sigue respondiendo.
+
+Si ninguno de los DNS de respaldo responde, la causa está fuera de la red local (por ejemplo, una caída del proveedor de internet): cambiar el DHCP y reiniciar el Wi-Fi no la arreglaría y solo desconectaría a los clientes. En ese caso el monitor no toca el router, avisa una sola vez por Telegram y vuelve a comprobarlo en cada ciclo. El cooldown solo se consume cuando una recuperación llega a iniciarse.
 
 ### Secuencia de recuperación
 
 1. El monitor detecta la caída total y consecutiva de los DNS configurados.
-2. Envía una notificación de inicio mediante el cliente Telegram existente.
-3. Inicia sesión en la interfaz HTTP del Askey.
-4. Lee la configuración LAN y DHCP actual.
-5. Actualiza los DNS DHCP con `DNS_PRIMARY` y `DNS_SECONDARY`, preservando la IP LAN, máscara, estado DHCP y rango DHCP existentes.
-6. Vuelve a leer la configuración del router y verifica los DNS guardados.
-7. Lee el estado y la configuración actual de las radios Wi-Fi de 2,4 GHz y 5 GHz.
-8. Desactiva ambas radios simultáneamente.
-9. Espera el tiempo configurado en `WIFI_OFF_SECONDS` (10 segundos por defecto).
-10. Restaura las radios que estaban habilitadas antes del reinicio.
-11. Comprueba el estado administrativo y operativo de ambas radios.
-12. Notifica el resultado de la recuperación por Telegram.
+2. Comprueba que al menos uno de `DNS_PRIMARY` / `DNS_SECONDARY` responde a la consulta de prueba. Si ninguno responde, omite la recuperación (ver arriba).
+3. Envía una notificación de inicio mediante el cliente Telegram existente.
+4. Inicia sesión en la interfaz HTTP del Askey.
+5. Lee la configuración LAN y DHCP actual.
+6. Actualiza los DNS DHCP con `DNS_PRIMARY` y `DNS_SECONDARY`, preservando la IP LAN, máscara, estado DHCP y rango DHCP existentes.
+7. Vuelve a leer la configuración del router y verifica los DNS guardados.
+8. Lee el estado y la configuración actual de las radios Wi-Fi de 2,4 GHz y 5 GHz.
+9. Desactiva ambas radios simultáneamente.
+10. Espera el tiempo configurado en `WIFI_OFF_SECONDS` (10 segundos por defecto).
+11. Restaura las radios que estaban habilitadas antes del reinicio.
+12. Comprueba el estado administrativo y operativo de ambas radios.
+13. Notifica el resultado de la recuperación por Telegram.
 
 Se aplica un cooldown de 15 minutos por defecto para evitar repetir el procedimiento durante una caída prolongada. El valor puede cambiarse con `RECOVERY_COOLDOWN`.
+
+**Importante:** la recuperación no revierte los DNS del DHCP. Cuando AdGuard vuelve a responder, los dispositivos siguen recibiendo `DNS_PRIMARY` / `DNS_SECONDARY` (y, por tanto, sin el filtrado de AdGuard) hasta que restaures a mano los DNS originales en el router.
 
 Los errores o timeouts de una petición de escritura DNS no se interpretan automáticamente como prueba de que el cambio no se aplicó: el servicio vuelve a leer la configuración DHCP y comprueba el valor real. Las órdenes Wi-Fi también se verifican mediante una lectura posterior, incluso si el POST devuelve HTTP 200. Si el firmware rechaza una sesión, el servicio intenta renovarla una sola vez. Los fallos de Telegram no deben bloquear la recuperación.
 

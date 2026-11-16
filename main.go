@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -153,6 +154,17 @@ func loadConfig() (MonitorConfig, error) {
 		}
 		if cfg.Router.DNSSecondary == "" {
 			cfg.Router.DNSSecondary = "8.8.8.8"
+		}
+		// These values are written verbatim into the router's DHCP settings during
+		// an outage, so reject anything that is not a single IP address now rather
+		// than discovering the typo in the middle of an incident.
+		for _, setting := range []struct{ name, value string }{
+			{"DNS_PRIMARY", cfg.Router.DNSPrimary},
+			{"DNS_SECONDARY", cfg.Router.DNSSecondary},
+		} {
+			if net.ParseIP(setting.value) == nil {
+				return cfg, fmt.Errorf("%s must be a single IP address, got %q", setting.name, setting.value)
+			}
 		}
 		cfg.Router.WiFiOff, err = envDuration("WIFI_OFF_SECONDS", "10")
 		if err != nil {
@@ -374,6 +386,28 @@ func checkDNS(target Target, domain string, timeout time.Duration) (bool, string
 	return true, "DNS query successful"
 }
 
+// fallbackDNSAnswers reports whether at least one of the resolvers that a
+// recovery would install in the router's DHCP settings answers the monitor's
+// test query. When none does, the outage is upstream of the LAN (ISP/WAN):
+// pointing DHCP at those resolvers and restarting Wi-Fi cannot fix that, and
+// would only disconnect every Wi-Fi client for nothing.
+func fallbackDNSAnswers(cfg MonitorConfig, probe func(Target, string, time.Duration) (bool, string)) (bool, string) {
+	var failures []string
+	var probed []string
+	for _, ip := range []string{cfg.Router.DNSPrimary, cfg.Router.DNSSecondary} {
+		if ip == "" || slices.Contains(probed, ip) {
+			continue
+		}
+		probed = append(probed, ip)
+		healthy, detail := probe(Target{Name: ip, Addr: net.JoinHostPort(ip, "53")}, cfg.TestDomain, cfg.DNSTimeout)
+		if healthy {
+			return true, ""
+		}
+		failures = append(failures, fmt.Sprintf("%s: %s", ip, detail))
+	}
+	return false, strings.Join(failures, "; ")
+}
+
 type Telegram struct {
 	token  string
 	chatID string
@@ -383,19 +417,48 @@ type Telegram struct {
 func newTelegram(cfg MonitorConfig) *Telegram {
 	return &Telegram{token: cfg.BotToken, chatID: cfg.ChatID, client: &http.Client{Timeout: cfg.TelegramTimeout}}
 }
+
+// telegramMaxMessageRunes keeps messages safely below the 4096-character limit
+// of the Telegram Bot API, which rejects longer texts outright.
+const telegramMaxMessageRunes = 4000
+
+// truncateRunes shortens s to at most max runes, marking the cut with an ellipsis.
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if max < 1 || len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
+}
+
+// redact removes the bot token from an error. net/http wraps failures in a
+// *url.Error whose text embeds the full request URL, and the token is part of
+// that URL, so logging the raw error would leak the credential.
+func (t *Telegram) redact(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	text := err.Error()
+	if t.token != "" {
+		text = strings.ReplaceAll(text, t.token, "[REDACTED]")
+	}
+	return errors.New("Telegram request failed: " + text)
+}
+
 func (t *Telegram) send(message string) error {
-	body, err := json.Marshal(map[string]any{"chat_id": t.chatID, "text": message, "disable_web_page_preview": true})
+	body, err := json.Marshal(map[string]any{"chat_id": t.chatID, "text": truncateRunes(message, telegramMaxMessageRunes), "disable_web_page_preview": true})
 	if err != nil {
 		return err
 	}
 	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+t.token+"/sendMessage", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return t.redact(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return t.redact(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -435,7 +498,7 @@ func run(ctx context.Context, cfg MonitorConfig) {
 	}
 	consecutiveAllDown := 0
 	lastRecovery := time.Time{}
-	recoveryRunning := false
+	fallbackSkipNotified := false
 	for _, target := range cfg.Targets {
 		lines = append(lines, fmt.Sprintf("• %s: %s", target.Name, target.Addr))
 	}
@@ -468,21 +531,32 @@ func run(ctx context.Context, cfg MonitorConfig) {
 				consecutiveAllDown++
 			} else {
 				consecutiveAllDown = 0
+				fallbackSkipNotified = false
 			}
-			if allDown && consecutiveAllDown >= cfg.Router.FailureThreshold && !recoveryRunning && time.Since(lastRecovery) >= cfg.Router.Cooldown {
-				recoveryRunning = true
-				lastRecovery = time.Now()
-				notify(tg, fmt.Sprintf("🚨 ADGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
-				recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-				err := router.Recover(recoveryCtx)
-				cancel()
-				recoveryRunning = false
-				if err != nil {
-					log.Printf("ERROR Askey router recovery failed: %v", err)
-					notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+			if allDown && consecutiveAllDown >= cfg.Router.FailureThreshold && time.Since(lastRecovery) >= cfg.Router.Cooldown {
+				if answers, detail := fallbackDNSAnswers(cfg, checkDNS); !answers {
+					// Not an AdGuard problem: the public resolvers are unreachable too.
+					// Leave the router alone and look again on the next cycle; the
+					// cooldown is only consumed by a recovery that actually starts.
+					log.Printf("WARN Askey router recovery skipped: fallback DNS %s / %s do not answer either (%s)", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary, detail)
+					if !fallbackSkipNotified {
+						fallbackSkipNotified = true
+						notify(tg, fmt.Sprintf("🟠 Todos los DNS monitorizados están caídos, pero los DNS de respaldo (%s / %s) tampoco responden: parece una caída de internet, no de AdGuard. No se modifica el router; se reintentará en cada comprobación.", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					}
 				} else {
-					log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
-					notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					fallbackSkipNotified = false
+					lastRecovery = time.Now()
+					notify(tg, fmt.Sprintf("🚨 AdGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
+					recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+					err := router.Recover(recoveryCtx)
+					cancel()
+					if err != nil {
+						log.Printf("ERROR Askey router recovery failed: %v", err)
+						notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+					} else {
+						log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+						notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+					}
 				}
 			}
 		}

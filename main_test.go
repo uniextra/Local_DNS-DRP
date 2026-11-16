@@ -237,3 +237,102 @@ func TestLoadConfigValidatesRouterURL(t *testing.T) {
 		t.Fatalf("valid HTTPS router URL rejected: %v", err)
 	}
 }
+
+func TestLoadConfigValidatesFallbackDNS(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	for _, name := range []string{"DNS_PRIMARY", "DNS_SECONDARY"} {
+		for _, value := range []string{"dns.google", "1.1.1.1,8.8.8.8", "300.1.1.1", "not-an-ip"} {
+			t.Run(name+"="+value, func(t *testing.T) {
+				t.Setenv("DNS_PRIMARY", "1.1.1.1")
+				t.Setenv("DNS_SECONDARY", "8.8.8.8")
+				t.Setenv(name, value)
+				_, err := loadConfig()
+				if err == nil || !strings.Contains(err.Error(), name) {
+					t.Fatalf("loadConfig error = %v, want %s validation error", err, name)
+				}
+			})
+		}
+	}
+	t.Setenv("DNS_PRIMARY", "9.9.9.9")
+	t.Setenv("DNS_SECONDARY", "2606:4700:4700::1111")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("valid fallback DNS addresses rejected: %v", err)
+	}
+	if cfg.Router.DNSPrimary != "9.9.9.9" || cfg.Router.DNSSecondary != "2606:4700:4700::1111" {
+		t.Fatalf("fallback DNS = %q / %q", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+	}
+}
+
+func TestFallbackDNSAnswers(t *testing.T) {
+	const timeout = 2 * time.Second
+	newCfg := func(primary, secondary string) MonitorConfig {
+		return MonitorConfig{
+			TestDomain: "example.com",
+			DNSTimeout: timeout,
+			Router:     RouterConfig{DNSPrimary: primary, DNSSecondary: secondary},
+		}
+	}
+	tests := []struct {
+		name       string
+		cfg        MonitorConfig
+		answering  map[string]bool
+		wantOK     bool
+		wantProbed []string
+	}{
+		{
+			name:       "no fallback resolver answers: the outage is upstream",
+			cfg:        newCfg("1.1.1.1", "2606:4700:4700::1111"),
+			wantOK:     false,
+			wantProbed: []string{"1.1.1.1:53", "[2606:4700:4700::1111]:53"},
+		},
+		{
+			name:       "only the secondary answers",
+			cfg:        newCfg("1.1.1.1", "8.8.8.8"),
+			answering:  map[string]bool{"8.8.8.8:53": true},
+			wantOK:     true,
+			wantProbed: []string{"1.1.1.1:53", "8.8.8.8:53"},
+		},
+		{
+			name:       "primary answers: the secondary is not probed",
+			cfg:        newCfg("1.1.1.1", "8.8.8.8"),
+			answering:  map[string]bool{"1.1.1.1:53": true},
+			wantOK:     true,
+			wantProbed: []string{"1.1.1.1:53"},
+		},
+		{
+			name:       "identical primary and secondary are probed once",
+			cfg:        newCfg("1.1.1.1", "1.1.1.1"),
+			wantOK:     false,
+			wantProbed: []string{"1.1.1.1:53"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var probed []string
+			probe := func(target Target, domain string, got time.Duration) (bool, string) {
+				probed = append(probed, target.Addr)
+				if domain != "example.com" || got != timeout {
+					t.Errorf("probe(%s) used domain %q and timeout %s", target.Addr, domain, got)
+				}
+				if tc.answering[target.Addr] {
+					return true, "DNS query successful"
+				}
+				return false, "i/o timeout"
+			}
+			ok, detail := fallbackDNSAnswers(tc.cfg, probe)
+			if ok != tc.wantOK {
+				t.Fatalf("fallbackDNSAnswers = %v (%s), want %v", ok, detail, tc.wantOK)
+			}
+			if strings.Join(probed, ",") != strings.Join(tc.wantProbed, ",") {
+				t.Fatalf("probed %v, want %v", probed, tc.wantProbed)
+			}
+			if !ok && !strings.Contains(detail, "i/o timeout") {
+				t.Fatalf("detail %q does not explain why the fallback resolvers failed", detail)
+			}
+		})
+	}
+}

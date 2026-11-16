@@ -70,7 +70,10 @@ func (r *AskeyRouter) request(ctx context.Context, method, path string, form url
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("router HTTP %s: %s", resp.Status, strings.TrimSpace(string(data)))
+		// The message is logged and sent to Telegram: keep it to a short,
+		// single-line summary instead of a whole HTML error page.
+		summary := truncateRunes(strings.Join(strings.Fields(string(data)), " "), 200)
+		return nil, fmt.Errorf("router HTTP %s: %s", resp.Status, summary)
 	}
 	return data, nil
 }
@@ -456,6 +459,10 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 }
 
 func (r *AskeyRouter) Recover(ctx context.Context) error {
+	// Recoveries are rare, so never trust a session cached by an earlier one:
+	// the router expires sessions silently and may answer with a 200 login page
+	// that only looks like a malformed response further down the line.
+	r.invalidateSession()
 	if err := r.updateDNS(ctx); err != nil {
 		return err
 	}
