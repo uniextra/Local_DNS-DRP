@@ -38,11 +38,11 @@ Edita los valores de ejemplo en el Compose:
 
 ```yaml
 services:
-  local-dns-monitor:
+  adguard-dns-monitor:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: local-dns-monitor
+    container_name: adguard-dns-monitor
     restart: unless-stopped
     environment:
       # DNS targets: comma-separated name=IP[:port] entries
