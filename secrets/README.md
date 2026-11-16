@@ -14,7 +14,8 @@ Linux example:
 cp secrets/telegram_bot_token.example secrets/telegram_bot_token.txt
 cp secrets/telegram_chat_id.example secrets/telegram_chat_id.txt
 cp secrets/router_password.example secrets/router_password.txt
-chmod 0444 secrets/*.txt
+sudo chown 10001:10001 secrets/*.txt
+sudo chmod 0400 secrets/*.txt
 ```
 
 The container runs as UID/GID `10001:10001`, so the mounted files must be readable by that unprivileged identity. Keep the host-side `secrets` directory restricted to administrators and do not publish or commit its contents.
