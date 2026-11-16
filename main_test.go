@@ -100,7 +100,7 @@ func TestValidateDNSResponse(t *testing.T) {
 	})
 	t.Run("mismatched question", func(t *testing.T) {
 		question := append([]byte(nil), query[12:]...)
-		question[2] = 'x'
+		question[1] = 'z'
 		if err := validateDNSResponse(query, buildAResponse(query, question, nil)); err == nil {
 			t.Fatal("expected mismatched question to be rejected")
 		}
