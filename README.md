@@ -157,7 +157,7 @@ El estado de los destinos se mantiene en memoria. Al reiniciar el contenedor, lo
 
 ## Recuperación automática del Askey RTF8316VW
 
-La recuperación es opcional y se activa únicamente cuando el archivo indicado por `ROUTER_PASSWORD_FILE` contiene una contraseña. Un archivo vacío mantiene la recuperación desactivada. `ROUTER_MODEL` selecciona el adaptador; no se autodetecta el router a partir de su URL ni de la respuesta HTTP.
+La recuperación es opcional y se activa únicamente cuando `ROUTER_PASSWORD` contiene una contraseña. Si la variable está vacía, la recuperación permanece desactivada. `ROUTER_MODEL` selecciona el adaptador; no se autodetecta el router a partir de su URL ni de la respuesta HTTP.
 
 ### Condición de activación
 
