@@ -291,9 +291,9 @@ func TestRecoverLogsInAgainForEveryRecovery(t *testing.T) {
 
 func TestNormalizeRouterModel(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		input string
-		want string
+		want  string
 	}{
 		{name: "empty uses backwards-compatible default", input: "", want: RouterModelAskeyRTF8316VW},
 		{name: "whitespace uses default", input: "  ", want: RouterModelAskeyRTF8316VW},
