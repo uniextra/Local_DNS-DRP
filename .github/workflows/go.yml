@@ -2,24 +2,26 @@ name: Go CI
 
 on:
   push:
-    branches:
-      - fix/recovery-hardening
     paths:
       - "*.go"
       - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/go.yml"
   pull_request:
     paths:
       - "*.go"
       - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/go.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
-    name: Normalize Go format and run checks
+    name: Format, test, vet and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -31,15 +33,14 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.mod
 
-      - name: Apply gofmt and commit formatting
+      - name: Check formatting
+        shell: bash
         run: |
-          gofmt -w *.go
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -- '*.go'
-            git commit -m "style: apply gofmt"
-            git push
+          files="$(gofmt -l *.go)"
+          if [[ -n "$files" ]]; then
+            echo "The following Go files need gofmt:"
+            echo "$files"
+            exit 1
           fi
 
       - name: Unit tests
