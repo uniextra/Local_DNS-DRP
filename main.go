@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -35,8 +36,14 @@ type State struct { Known bool; Healthy bool }
 func envDuration(name, fallback string) (time.Duration, error) {
 	raw := strings.TrimSpace(os.Getenv(name)); if raw == "" { raw = fallback }
 	seconds, err := strconv.ParseFloat(raw, 64)
-	if err != nil || seconds <= 0 { return 0, fmt.Errorf("%s must be a positive number of seconds", name) }
-	return time.Duration(seconds * float64(time.Second)), nil
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || seconds > float64(1<<63-1)/float64(time.Second) {
+		return 0, fmt.Errorf("%s must be a finite, positive duration within the time.Duration range", name)
+	}
+	duration := time.Duration(seconds * float64(time.Second))
+	if duration <= 0 {
+		return 0, fmt.Errorf("%s is too small to represent as a time.Duration", name)
+	}
+	return duration, nil
 }
 
 func loadConfig() (MonitorConfig, error) {
@@ -90,9 +97,147 @@ func loadConfig() (MonitorConfig, error) {
 
 func makeDNSQuery(domain string, id uint16) ([]byte, error) {
 	packet := make([]byte, 12); binary.BigEndian.PutUint16(packet[0:2], id); binary.BigEndian.PutUint16(packet[2:4], 0x0100); binary.BigEndian.PutUint16(packet[4:6], 1)
-	for _, label := range strings.Split(domain, ".") { if label == "" || len(label) > 63 { return nil, fmt.Errorf("invalid DNS label %q", label) }; packet = append(packet, byte(len(label))); packet = append(packet, label...) }
+	wireNameLength := 1 // terminating root label
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 {
+			return nil, fmt.Errorf("invalid DNS label %q", label)
+		}
+		wireNameLength += 1 + len(label)
+		if wireNameLength > 255 {
+			return nil, fmt.Errorf("DNS name exceeds the 255-octet wire-format limit")
+		}
+		packet = append(packet, byte(len(label)))
+		packet = append(packet, label...)
+	}
 	packet = append(packet, 0, 0, 1, 0, 1)
 	return packet, nil
+}
+
+func readDNSName(packet []byte, offset int) (string, int, error) {
+	var labels []string
+	nextOffset := -1
+	for steps := 0; steps < 128; steps++ {
+		if offset >= len(packet) {
+			return "", 0, errors.New("DNS name exceeds packet boundary")
+		}
+		length := int(packet[offset])
+		if length&0xc0 == 0xc0 {
+			if offset+1 >= len(packet) {
+				return "", 0, errors.New("truncated DNS compression pointer")
+			}
+			pointer := ((length & 0x3f) << 8) | int(packet[offset+1])
+			if pointer >= len(packet) {
+				return "", 0, errors.New("DNS compression pointer out of range")
+			}
+			if nextOffset < 0 {
+				nextOffset = offset + 2
+			}
+			offset = pointer
+			continue
+		}
+		if length&0xc0 != 0 {
+			return "", 0, errors.New("unsupported DNS label encoding")
+		}
+		offset++
+		if length == 0 {
+			if nextOffset < 0 {
+				nextOffset = offset
+			}
+			return strings.Join(labels, "."), nextOffset, nil
+		}
+		if length > 63 || offset+length > len(packet) {
+			return "", 0, errors.New("invalid or truncated DNS label")
+		}
+		labels = append(labels, string(packet[offset:offset+length]))
+		offset += length
+	}
+	return "", 0, errors.New("DNS compression pointer loop or excessive indirection")
+}
+
+func validateDNSResponse(query, response []byte) error {
+	if len(query) < 17 || len(response) < 12 {
+		return errors.New("DNS query or response is too short")
+	}
+	if binary.BigEndian.Uint16(response[0:2]) != binary.BigEndian.Uint16(query[0:2]) {
+		return errors.New("DNS response ID mismatch")
+	}
+	flags := binary.BigEndian.Uint16(response[2:4])
+	if flags&0x8000 == 0 {
+		return errors.New("packet is not a DNS response")
+	}
+	if flags&0x0200 != 0 {
+		return errors.New("truncated DNS response")
+	}
+	if flags&0x7800 != 0 {
+		return errors.New("DNS response opcode mismatch")
+	}
+	if rcode := flags & 0x000f; rcode != 0 {
+		return fmt.Errorf("DNS response code: %d", rcode)
+	}
+	if binary.BigEndian.Uint16(query[4:6]) != 1 || binary.BigEndian.Uint16(response[4:6]) != 1 {
+		return errors.New("DNS query/response must contain exactly one question")
+	}
+
+	queryName, queryEnd, err := readDNSName(query, 12)
+	if err != nil || queryEnd+4 > len(query) {
+		return errors.New("invalid DNS question in query")
+	}
+	queryType := binary.BigEndian.Uint16(query[queryEnd : queryEnd+2])
+	queryClass := binary.BigEndian.Uint16(query[queryEnd+2 : queryEnd+4])
+
+	responseName, responseEnd, err := readDNSName(response, 12)
+	if err != nil || responseEnd+4 > len(response) {
+		return errors.New("invalid DNS question in response")
+	}
+	responseType := binary.BigEndian.Uint16(response[responseEnd : responseEnd+2])
+	responseClass := binary.BigEndian.Uint16(response[responseEnd+2 : responseEnd+4])
+	if !strings.EqualFold(responseName, queryName) || responseType != queryType || responseClass != queryClass {
+		return errors.New("DNS response question does not match the query")
+	}
+
+	answerCount := int(binary.BigEndian.Uint16(response[6:8]))
+	if answerCount == 0 {
+		return errors.New("DNS response contains no answer")
+	}
+
+	offset := responseEnd + 4
+	answerFound := false
+	for i := 0; i < answerCount; i++ {
+		_, nameEnd, err := readDNSName(response, offset)
+		if err != nil || nameEnd+10 > len(response) {
+			return errors.New("malformed DNS answer record")
+		}
+		recordType := binary.BigEndian.Uint16(response[nameEnd : nameEnd+2])
+		recordClass := binary.BigEndian.Uint16(response[nameEnd+2 : nameEnd+4])
+		dataLength := int(binary.BigEndian.Uint16(response[nameEnd+8 : nameEnd+10]))
+		dataOffset := nameEnd + 10
+		dataEnd := dataOffset + dataLength
+		if dataEnd > len(response) {
+			return errors.New("truncated DNS answer data")
+		}
+		if recordClass == 1 && recordType == queryType {
+			switch recordType {
+			case 1: // A
+				answerFound = dataLength == 4
+			case 28: // AAAA
+				answerFound = dataLength == 16
+			}
+		}
+		if recordClass == 1 && recordType == 5 { // CNAME
+			_, cnameEnd, cnameErr := readDNSName(response, dataOffset)
+			if cnameErr == nil && cnameEnd <= dataEnd {
+				answerFound = true
+			}
+		}
+		if answerFound {
+			break
+		}
+		offset = dataEnd
+	}
+	if !answerFound {
+		return errors.New("DNS response contains no usable answer for the requested record type")
+	}
+	return nil
 }
 
 func checkDNS(target Target, domain string, timeout time.Duration) (bool, string) {
@@ -101,10 +246,9 @@ func checkDNS(target Target, domain string, timeout time.Duration) (bool, string
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	if _, err := conn.Write(query); err != nil { return false, err.Error() }
 	buf := make([]byte, 4096); n, err := conn.Read(buf); if err != nil { return false, err.Error() }; if n < 12 { return false, "DNS response too short" }
-	response := buf[:n]; if binary.BigEndian.Uint16(response[0:2]) != id { return false, "DNS response ID mismatch" }
-	flags := binary.BigEndian.Uint16(response[2:4]); if flags&0x8000 == 0 { return false, "packet is not a DNS response" }; if flags&0x0200 != 0 { return false, "truncated DNS response" }
-	if rcode := flags & 0x000f; rcode != 0 { return false, fmt.Sprintf("DNS response code: %d", rcode) }
-	if binary.BigEndian.Uint16(response[6:8]) == 0 { return false, "DNS response contains no answer" }
+	if err := validateDNSResponse(query, buf[:n]); err != nil {
+		return false, err.Error()
+	}
 	return true, "DNS query successful"
 }
 
