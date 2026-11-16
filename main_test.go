@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"math"
 	"net"
 	"strings"
 	"testing"
@@ -18,44 +17,79 @@ func TestMakeDNSQuery(t *testing.T) {
 	if !strings.HasSuffix(string(packet), "\x00\x00\x01\x00\x01") { t.Fatal("query does not end with root terminator, A type and IN class") }
 }
 
-func TestMakeDNSQueryRejectsInvalidLabels(t *testing.T) {
-	for _, domain := range []string{"", "example..com", strings.Repeat("a", 64) + ".com"} {
+func TestMakeDNSQueryRejectsInvalidNames(t *testing.T) {
+	overlong := strings.Join([]string{strings.Repeat("a", 63), strings.Repeat("b", 63), strings.Repeat("c", 63), strings.Repeat("d", 63), "e"}, ".")
+	for _, domain := range []string{"", "example..com", strings.Repeat("a", 64) + ".com", overlong} {
 		if _, err := makeDNSQuery(domain, 1); err == nil { t.Errorf("makeDNSQuery(%q) expected error", domain) }
 	}
 }
 
-func TestMakeDNSQueryRejectsOverlongName(t *testing.T) {
-	domain := strings.Join([]string{strings.Repeat("a", 63), strings.Repeat("b", 63), strings.Repeat("c", 63), strings.Repeat("d", 63), "e"}, ".")
-	if _, err := makeDNSQuery(domain, 1); err == nil { t.Fatal("expected overlong DNS name to be rejected") }
+func dnsName(name string) []byte {
+	var packet []byte
+	for _, label := range strings.Split(name, ".") {
+		packet = append(packet, byte(len(label)))
+		packet = append(packet, label...)
+	}
+	return append(packet, 0)
 }
 
-func TestValidateDNSResponse(t *testing.T) {
+func dnsResponseBase(query []byte, answers int) []byte {
+	response := append([]byte(nil), query...)
+	binary.BigEndian.PutUint16(response[2:4], 0x8180)
+	binary.BigEndian.PutUint16(response[6:8], uint16(answers))
+	return response
+}
+
+func appendARecord(response []byte, owner []byte, ip net.IP) []byte {
+	response = append(response, owner...)
+	response = append(response, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4)
+	return append(response, ip.To4()...)
+}
+
+func TestValidateDNSResponseAcceptsARecord(t *testing.T) {
 	query, err := makeDNSQuery("example.com", 0x1234)
 	if err != nil { t.Fatal(err) }
-	// A standard response with one compressed-owner A record.
-	good := append([]byte(nil), query...)
-	binary.BigEndian.PutUint16(good[2:4], 0x8180)
-	binary.BigEndian.PutUint16(good[6:8], 1)
-	good = append(good, 0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 1)
-	if err := validateDNSResponse(query, good); err != nil { t.Fatalf("valid response rejected: %v", err) }
+	response := dnsResponseBase(query, 1)
+	response = appendARecord(response, []byte{0xC0, 0x0C}, net.IPv4(192, 0, 2, 1))
+	if err := validateDNSResponse(query, response); err != nil { t.Fatalf("valid response rejected: %v", err) }
+}
 
-	tests := []struct{name string; mutate func([]byte)}{
-		{"wrong transaction ID", func(p []byte) { p[1]++ }},
-		{"not a response", func(p []byte) { p[2] &^= 0x80 }},
-		{"wrong question", func(p []byte) { p[13] = 'x' }},
-		{"no answer", func(p []byte) { binary.BigEndian.PutUint16(p[6:8], 0) }},
-		{"truncated answer", func(p []byte) { p = p[:len(p)-1] }},
+func TestValidateDNSResponseFollowsCNAMEChain(t *testing.T) {
+	query, err := makeDNSQuery("example.com", 0x1234)
+	if err != nil { t.Fatal(err) }
+	response := dnsResponseBase(query, 2)
+	target := dnsName("edge.example.net")
+	response = append(response, 0xC0, 0x0C, 0, 5, 0, 1, 0, 0, 0, 60, byte(len(target) >> 8), byte(len(target)))
+	response = append(response, target...)
+	response = appendARecord(response, target, net.IPv4(198, 51, 100, 8))
+	if err := validateDNSResponse(query, response); err != nil { t.Fatalf("valid CNAME response rejected: %v", err) }
+}
+
+func TestValidateDNSResponseRejectsUnrelatedOrMalformedAnswers(t *testing.T) {
+	query, err := makeDNSQuery("example.com", 0x1234)
+	if err != nil { t.Fatal(err) }
+	unrelated := dnsResponseBase(query, 1)
+	unrelated = appendARecord(unrelated, dnsName("unrelated.example"), net.IPv4(192, 0, 2, 1))
+	truncated := dnsResponseBase(query, 1)
+	truncated = appendARecord(truncated, []byte{0xC0, 0x0C}, net.IPv4(192, 0, 2, 1))
+	truncated = truncated[:len(truncated)-1]
+
+	tests := []struct{name string; packet []byte}{
+		{"wrong transaction ID", func() []byte { p:=dnsResponseBase(query,1); p[1]++; return appendARecord(p,[]byte{0xC0,0x0C},net.IPv4(192,0,2,1)) }()},
+		{"not a response", func() []byte { p:=dnsResponseBase(query,1); p[2]&^=0x80; return appendARecord(p,[]byte{0xC0,0x0C},net.IPv4(192,0,2,1)) }()},
+		{"wrong question", func() []byte { p:=dnsResponseBase(query,1); p[13]='x'; return appendARecord(p,[]byte{0xC0,0x0C},net.IPv4(192,0,2,1)) }()},
+		{"zero answers", dnsResponseBase(query,0)},
+		{"unrelated A record", unrelated},
+		{"truncated A record", truncated},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p := append([]byte(nil), good...)
-			if tc.name == "truncated answer" { p = p[:len(p)-1] } else { tc.mutate(p) }
-			if err := validateDNSResponse(query, p); err == nil { t.Fatal("expected response to be rejected") }
+			if err := validateDNSResponse(query, tc.packet); err == nil { t.Fatal("expected response to be rejected") }
 		})
 	}
 }
 
-func TestCheckDNSUsesConfiguredTarget(t *testing.T) {
+func TestCheckDNSQueriesConfiguredTarget(t *testing.T) {
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil { t.Fatal(err) }
 	defer pc.Close()
@@ -63,12 +97,10 @@ func TestCheckDNSUsesConfiguredTarget(t *testing.T) {
 		buf := make([]byte, 512)
 		n, addr, err := pc.ReadFrom(buf)
 		if err != nil { return }
-		q := buf[:n]
-		resp := append([]byte(nil), q...)
-		binary.BigEndian.PutUint16(resp[2:4], 0x8180)
-		binary.BigEndian.PutUint16(resp[6:8], 1)
-		resp = append(resp, 0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 10, 0, 4, 192, 0, 2, 10)
-		_, _ = pc.WriteTo(resp, addr)
+		query := buf[:n]
+		response := dnsResponseBase(query, 1)
+		response = appendARecord(response, []byte{0xC0, 0x0C}, net.IPv4(192, 0, 2, 10))
+		_, _ = pc.WriteTo(response, addr)
 	}()
 	ok, detail := checkDNS(Target{Name:"test",Addr:pc.LocalAddr().String()}, "example.com", time.Second)
 	if !ok { t.Fatalf("checkDNS failed against configured target: %s", detail) }
@@ -81,10 +113,8 @@ func TestEnvDurationRejectsNonFiniteAndOverflow(t *testing.T) {
 	}
 	t.Setenv("DURATION_TEST", "0.0000000001")
 	if _, err := envDuration("DURATION_TEST", "1"); err == nil { t.Error("envDuration accepted sub-nanosecond duration") }
-	_ = math.MaxInt64
 }
 
-// Remaining config tests exercise target parsing and Telegram requirements.
 func TestLoadConfigParsesIPv4AndIPv6Targets(t *testing.T) {
 	t.Setenv("TARGETS", "home=192.168.1.2,lab=192.168.1.10:5353,office=[2001:db8::53]:53")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
