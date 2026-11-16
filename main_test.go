@@ -153,3 +153,19 @@ func TestLoadConfigRequiresTelegramCredentials(t *testing.T) {
 	_, err := loadConfig()
 	if err == nil || !strings.Contains(err.Error(),"TELEGRAM_BOT_TOKEN") { t.Fatalf("unexpected error: %v",err) }
 }
+func TestLoadConfigValidatesRouterURL(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	for _, value := range []string{"ftp://192.168.1.1", "router.local", "http://user:pass@192.168.1.1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("ROUTER_URL", value)
+			_, err := loadConfig()
+			if err == nil || !strings.Contains(err.Error(), "ROUTER_URL") { t.Fatalf("loadConfig error = %v, want ROUTER_URL validation error", err) }
+		})
+	}
+	t.Setenv("ROUTER_URL", "https://192.168.1.1")
+	if _, err := loadConfig(); err != nil { t.Fatalf("valid HTTPS router URL rejected: %v", err) }
+}
+
