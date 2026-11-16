@@ -118,6 +118,7 @@ func loadConfig() (MonitorConfig, error) {
 	if len(cfg.Targets) == 0 {
 		return cfg, errors.New("TARGETS contains no valid endpoints")
 	}
+	var err error
 	cfg.BotToken, err = secretEnv("TELEGRAM_BOT_TOKEN")
 	if err != nil {
 		return cfg, err
@@ -129,7 +130,6 @@ func loadConfig() (MonitorConfig, error) {
 	if cfg.BotToken == "" || cfg.ChatID == "" {
 		return cfg, errors.New("TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_FILE) and TELEGRAM_CHAT_ID (or TELEGRAM_CHAT_ID_FILE) are required")
 	}
-	var err error
 	cfg.Interval, err = envDuration("CHECK_INTERVAL", "60")
 	if err != nil {
 		return cfg, err
