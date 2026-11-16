@@ -2,7 +2,7 @@
 
 Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router Askey RTF8316VW cuando todos los servidores DNS monitorizados dejan de responder.
 
-El servicio no tiene interfaz web ni publica puertos. Se ejecuta como contenedor Docker y utiliza Telegram para notificar los cambios de estado y los resultados de recuperación.
+El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen multi-arquitectura para Linux `amd64` y `arm64` (incluidas Raspberry Pi compatibles) y utiliza Telegram para notificar los cambios de estado y los resultados de recuperación.
 
 ## Funcionalidades
 
@@ -15,6 +15,8 @@ El servicio no tiene interfaz web ni publica puertos. Se ejecuta como contenedor
 - Verifica la configuración DNS y el estado de las radios después del cambio.
 - Aplica un cooldown para evitar recuperaciones repetidas durante una caída prolongada.
 - Reutiliza el cliente Telegram existente para informar del inicio y resultado de la recuperación.
+- Lee el token de Telegram, el chat ID y la contraseña del router desde Docker Compose secrets montados como archivos.
+- Publica imágenes Docker multi-arquitectura `linux/amd64` y `linux/arm64`.
 
 ## Requisitos
 
@@ -32,40 +34,37 @@ git clone https://github.com/uniextra/Local_DNS-DRP.git
 cd Local_DNS-DRP
 ```
 
-Toda la configuración se realiza **directamente en la sección `environment` de `docker-compose.yml`**. No se utiliza fichero `.env`, interpolación `${...}` ni variables externas del host.
-
-Edita los valores de ejemplo en el Compose:
+El Compose descarga la imagen multi-arquitectura de Docker Hub; Docker selecciona automáticamente `amd64` o `arm64` según el host. Antes del primer arranque, crea los archivos locales de secretos (no se versionan):
 
 ```yaml
 services:
   adguard-dns-monitor:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: uniextra/local-dns-drp:latest
     container_name: adguard-dns-monitor
     restart: unless-stopped
     environment:
-      # DNS targets: comma-separated name=IP[:port] entries
       TARGETS: "adguard-home=192.168.1.2,adguard-backup=192.168.1.3"
 
-      # Telegram notifications
-      TELEGRAM_BOT_TOKEN: "YOUR_BOT_TOKEN"
-      TELEGRAM_CHAT_ID: "YOUR_CHAT_ID"
+      # Read credentials from read-only files mounted under /run/secrets.
+      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
+      TELEGRAM_CHAT_ID_FILE: /run/secrets/telegram_chat_id
 
-      # DNS monitor
       CHECK_INTERVAL: "60"
       DNS_TIMEOUT: "3"
       DNS_TEST_DOMAIN: "google.com"
       TELEGRAM_TIMEOUT: "10"
 
-      # Optional automatic recovery for Askey RTF8316VW
       ROUTER_URL: "http://192.168.1.1"
       ROUTER_USERNAME: "1234"
-      ROUTER_PASSWORD: ""
+      ROUTER_PASSWORD_FILE: /run/secrets/router_password
       DNS_PRIMARY: "1.1.1.1"
       DNS_SECONDARY: "8.8.8.8"
       WIFI_OFF_SECONDS: "10"
       RECOVERY_COOLDOWN: "900"
+    secrets:
+      - telegram_bot_token
+      - telegram_chat_id
+      - router_password
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -81,23 +80,43 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token.txt
+  telegram_chat_id:
+    file: ./secrets/telegram_chat_id.txt
+  router_password:
+    file: ./secrets/router_password.txt
 ```
 
-Sustituye:
+Crea los archivos locales a partir de las plantillas incluidas:
 
-- `TARGETS`: las IP y puertos de tus instancias AdGuard Home.
-- `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`: las credenciales del bot y el destinatario.
-- `ROUTER_PASSWORD`: la contraseña web del router para habilitar la recuperación automática.
+```bash
+cp secrets/telegram_bot_token.example secrets/telegram_bot_token.txt
+cp secrets/telegram_chat_id.example secrets/telegram_chat_id.txt
+cp secrets/router_password.example secrets/router_password.txt
+```
 
-Si `ROUTER_PASSWORD` está vacía, la recuperación del Askey queda desactivada. El monitor DNS y las notificaciones habituales continúan funcionando.
+Edita los dos primeros archivos con tus valores. Deja `router_password.txt` completamente vacío para desactivar la recuperación del Askey. En Linux, el contenedor se ejecuta como UID/GID `10001:10001`; asigna los archivos a ese usuario y limita su lectura:
+
+```bash
+sudo chown 10001:10001 secrets/*.txt
+sudo chmod 0400 secrets/*.txt
+```
+
+Sustituye también `TARGETS` por las IP y puertos de tus instancias AdGuard Home y ajusta los valores no sensibles del router.
 
 Valida la configuración y arranca el contenedor:
 
 ```bash
 docker compose config
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose logs -f adguard-dns-monitor
 ```
+
+La imagen publicada contiene manifiestos para `linux/amd64` y `linux/arm64`. En Raspberry Pi con sistema operativo de 64 bits se utilizará la variante ARM64 automáticamente.
 
 Para detenerlo:
 
@@ -107,15 +126,15 @@ docker compose down
 
 ## Variables de entorno
 
-Todas estas variables se definen directamente dentro de `environment` en `docker-compose.yml`.
+Las variables no sensibles se definen en `environment` en `docker-compose.yml`. Para credenciales, Compose monta los archivos declarados en `secrets:` bajo `/run/secrets/`; el programa los lee mediante variables `*_FILE`. Por compatibilidad también admite las variables antiguas (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `ROUTER_PASSWORD`), pero no se recomienda volver a introducir secretos directamente en Compose.
 
 ### Monitor DNS y Telegram
 
 | Variable | Valor de ejemplo | Descripción |
 | --- | --- | --- |
 | `TARGETS` | `adguard-home=192.168.1.2,adguard-backup=192.168.1.3` | Lista de destinos separados por comas con formato `nombre=IP[:puerto]`. El puerto por defecto es 53. Deben utilizarse direcciones IP, no hostnames. |
-| `TELEGRAM_BOT_TOKEN` | `YOUR_BOT_TOKEN` | Token del bot creado con `@BotFather`. |
-| `TELEGRAM_CHAT_ID` | `YOUR_CHAT_ID` | ID del usuario, grupo o canal que recibe las notificaciones. |
+| `TELEGRAM_BOT_TOKEN_FILE` | `/run/secrets/telegram_bot_token` | Ruta del archivo con el token del bot creado con `@BotFather`. |
+| `TELEGRAM_CHAT_ID_FILE` | `/run/secrets/telegram_chat_id` | Ruta del archivo con el ID del usuario, grupo o canal que recibe las notificaciones. |
 | `CHECK_INTERVAL` | `60` | Intervalo entre comprobaciones, en segundos. Admite decimales. |
 | `DNS_TIMEOUT` | `3` | Timeout de cada consulta DNS, en segundos. Admite decimales. |
 | `DNS_TEST_DOMAIN` | `google.com` | Dominio consultado mediante un registro A (IPv4). |
@@ -135,7 +154,7 @@ Cada combinación IP/puerto debe ser única.
 | --- | --- | --- |
 | `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router Askey. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
-| `ROUTER_PASSWORD` | Vacío | Contraseña web. La recuperación se activa cuando esta variable tiene valor. |
+| `ROUTER_PASSWORD_FILE` | `/run/secrets/router_password` | Ruta del archivo con la contraseña web. Un archivo vacío desactiva la recuperación. |
 | `DNS_PRIMARY` | `1.1.1.1` | DNS primario que se configurará en DHCP. Debe ser una dirección IP. |
 | `DNS_SECONDARY` | `8.8.8.8` | DNS secundario que se configurará en DHCP. Debe ser una dirección IP. |
 | `WIFI_OFF_SECONDS` | `10` | Tiempo durante el que ambas radios Wi-Fi permanecen apagadas. |
@@ -153,7 +172,7 @@ El estado de los destinos se mantiene en memoria. Al reiniciar el contenedor, lo
 
 ## Recuperación automática del Askey RTF8316VW
 
-La recuperación es opcional y se activa únicamente cuando `ROUTER_PASSWORD` tiene valor.
+La recuperación es opcional y se activa únicamente cuando el archivo indicado por `ROUTER_PASSWORD_FILE` contiene una contraseña. Un archivo vacío mantiene la recuperación desactivada.
 
 ### Condición de activación
 
@@ -186,9 +205,9 @@ Los errores o timeouts de una petición de escritura DNS no se interpretan autom
 ## Telegram
 
 1. Crea un bot con `@BotFather` mediante `/newbot`.
-2. Copia el token en `TELEGRAM_BOT_TOKEN` dentro de `docker-compose.yml`.
+2. Copia el token en `secrets/telegram_bot_token.txt`.
 3. Inicia una conversación con el bot o añádelo al grupo destinatario.
-4. Introduce el ID correspondiente en `TELEGRAM_CHAT_ID`.
+4. Introduce el ID correspondiente en `secrets/telegram_chat_id.txt`.
 
 El monitor reutiliza el mismo cliente Telegram para las notificaciones normales y los avisos de recuperación.
 
@@ -229,7 +248,7 @@ Los destinos de `TARGETS` también son independientes: son las IP de AdGuard Hom
 - `read_only: true` mantiene el filesystem raíz en solo lectura.
 - `tmpfs` proporciona el espacio temporal necesario sin habilitar escritura general en el contenedor.
 
-**Credenciales:** el token de Telegram y la contraseña del router se escriben directamente en `docker-compose.yml`, tal como requiere esta configuración. Mantén el repositorio privado y no publiques credenciales reales en un repositorio público. Ten en cuenta que las variables de entorno del contenedor pueden ser visibles a usuarios con permisos suficientes sobre el host Docker.
+**Credenciales:** el Compose no contiene valores de secretos. El token de Telegram, el chat ID y la contraseña del router se almacenan en archivos locales ignorados por Git y se montan en modo solo lectura bajo `/run/secrets/`. Docker Compose file-backed secrets no cifra esos archivos en reposo: protege los permisos del directorio `secrets/` en el host y no compartas ni publiques los archivos `.txt`. En Docker Swarm, utiliza secretos gestionados por Swarm.
 
 **Transporte hacia el router:** el Askey puede exponer su interfaz de administración únicamente por HTTP. En ese caso, la contraseña y los datos de sesión viajan sin cifrar y el programa registra un aviso al iniciar la recuperación. Utiliza `ROUTER_URL: https://...` solo si el router ofrece HTTPS con un certificado válido; no desactives la validación TLS para ocultar errores de certificado. Si el firmware solo soporta HTTP, limita el acceso de administración a una LAN de confianza y nunca expongas esa interfaz a Internet.
 
@@ -265,6 +284,16 @@ one-commit opt-out with `SKIP_AI_COAUTHORS=1`.
 Commits created through GitHub's web interface or an API must include the
 same trailer in the commit message; local Git hooks do not run for those
 operations.
+
+## Imagen Docker y arquitecturas
+
+El workflow de publicación construye y publica un manifiesto multi-arquitectura para `linux/amd64` y `linux/arm64`. En Raspberry Pi, utiliza un sistema operativo de 64 bits para ejecutar la variante ARM64. Docker selecciona la arquitectura correcta al hacer `docker pull uniextra/local-dns-drp:latest`.
+
+Todas las GitHub Actions están fijadas a un SHA completo de commit, con el tag de versión conservado como comentario para facilitar su auditoría.
+
+## Licencia
+
+Este proyecto se distribuye bajo la licencia [MIT](LICENSE).
 
 ## Desarrollo y validación
 
