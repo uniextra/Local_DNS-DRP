@@ -278,6 +278,7 @@ func validateDNSResponse(query, response []byte) error {
 		}
 	}
 	return errors.New("DNS response contains no usable answer for the requested record type")
+}
 
 func checkDNS(target Target, domain string, timeout time.Duration) (bool, string) {
 	id := uint16(time.Now().UnixNano()); query, err := makeDNSQuery(domain, id); if err != nil { return false, err.Error() }
