@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -83,6 +84,8 @@ func (r *AskeyRouter) ensureLogin(ctx context.Context) error {
 	return r.login(ctx)
 }
 
+func (r *AskeyRouter) invalidateSession() { r.sessionKey = "" }
+
 var jsValue = func(name string) *regexp.Regexp {
 	return regexp.MustCompile(`(?i)(?:var\s+)?`+regexp.QuoteMeta(name)+`\s*=\s*["']([^"']*)["']`)
 }
@@ -91,6 +94,15 @@ func extractJS(page []byte, name string) (string, error) {
 	m := jsValue(name).FindSubmatch(page)
 	if len(m) < 2 { return "", fmt.Errorf("router page field %q not found", name) }
 	return string(m[1]), nil
+}
+
+func normalizeDNSSetting(value string) string { return strings.ReplaceAll(strings.TrimSpace(value), " ", "") }
+
+func (r *AskeyRouter) readDNS(ctx context.Context) (string, error) {
+	if err := r.ensureLogin(ctx); err != nil { return "", err }
+	page, err := r.request(ctx, http.MethodGet, "/te_mapa_red_local.asp", nil)
+	if err != nil { return "", err }
+	return extractJS(page, "lanHostDns")
 }
 
 func (r *AskeyRouter) updateDNS(ctx context.Context) error {
@@ -103,25 +115,41 @@ func (r *AskeyRouter) updateDNS(ctx context.Context) error {
 		values[name], err = extractJS(page, name)
 		if err != nil { return err }
 	}
+	want := r.cfg.DNSPrimary+","+r.cfg.DNSSecondary
 	dnsForm := url.Values{
 		"ethIpAddress": {values["ethIpAddress"]},
 		"ethSubnetMask": {values["ethSubnetMask"]},
 		"enblDhcpSrv": {values["DHCPActive"]},
 		"dhcpEthStart": {values["startIPAddress"]},
 		"dhcpEthEnd": {values["endIPAddress"]},
-		"lanHostDns": {r.cfg.DNSPrimary+","+r.cfg.DNSSecondary},
+		"lanHostDns": {want},
 		"lanHostDhcp": {"3^"+values["gatewayIPaddress"]},
 		"sessionKey": {r.sessionKey},
 		"curWebPage": {"/te_mapa_red_local.asp"},
 	}
-	if _, err := r.request(ctx, http.MethodPost, "/cgi-bin/te_mapa_red_local.cgi", dnsForm); err != nil { return fmt.Errorf("update DHCP DNS: %w", err) }
-	verifyPage, err := r.request(ctx, http.MethodGet, "/te_mapa_red_local.asp", nil)
-	if err != nil { return fmt.Errorf("verify DHCP DNS: %w", err) }
-	got, err := extractJS(verifyPage, "lanHostDns")
-	if err != nil { return err }
-	want := r.cfg.DNSPrimary+","+r.cfg.DNSSecondary
-	if strings.ReplaceAll(got, " ", "") != want { return fmt.Errorf("DNS verification mismatch: got %q, want %q", got, want) }
-	return nil
+	_, writeErr := r.request(ctx, http.MethodPost, "/cgi-bin/te_mapa_red_local.cgi", dnsForm)
+	if writeErr == nil {
+		var responsePage []byte
+		responsePage, err = r.request(ctx, http.MethodGet, "/te_mapa_red_local.asp", nil)
+		if err == nil {
+			var got string
+			got, err = extractJS(responsePage, "lanHostDns")
+			if err == nil && normalizeDNSSetting(got) == normalizeDNSSetting(want) { return nil }
+		}
+	}
+	// A failed/ambiguous POST is not proof the router rejected the update.
+	// Verify through a fresh read; on a stale session, authenticate once again.
+	verifyCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	got, verifyErr := r.readDNS(verifyCtx)
+	if verifyErr != nil && r.sessionKey != "" {
+		r.invalidateSession()
+		got, verifyErr = r.readDNS(verifyCtx)
+	}
+	if verifyErr == nil && normalizeDNSSetting(got) == normalizeDNSSetting(want) { return nil }
+	if writeErr != nil { return fmt.Errorf("update DHCP DNS: %w (verification got %q, read error=%v)", writeErr, got, verifyErr) }
+	if err != nil { return fmt.Errorf("verify DHCP DNS: %w (read value=%q, read error=%v)", err, got, verifyErr) }
+	return fmt.Errorf("DNS verification mismatch: got %q, want %q (read error=%v)", got, want, verifyErr)
 }
 
 type wifiXML struct {
@@ -168,7 +196,8 @@ func (r *AskeyRouter) getRadio(ctx context.Context, id int) (radioXML, error) {
 }
 
 func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string, easyMesh string) error {
-	id, _ := strconv.Atoi(radio.ID)
+	id, err := strconv.Atoi(radio.ID)
+	if err != nil || (id != 0 && id != 1) { return fmt.Errorf("invalid router radio ID %q", radio.ID) }
 	form := url.Values{
 		"radio_adm_state": {admin}, "country_code": {radio.Country}, "standard": {radio.Standard},
 		"adm_bandwidth": {radio.Bandwidth}, "adm_channel": {radio.Channel}, "mcs": {radio.MCS},
@@ -183,7 +212,7 @@ func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string
 	} else {
 		form.Set("scs", radio.SCS); form.Set("tdwr_primary", radio.TDWR); form.Set("zerowaitDFS", radio.ZeroWaitDFS); form.Set("easymesh_adm_state", easyMesh)
 	}
-	_, err := r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
+	_, err = r.request(ctx, http.MethodPost, "/cgi-bin/cbSetWifi.xml", form)
 	return err
 }
 
@@ -195,59 +224,81 @@ func (r *AskeyRouter) easyMeshState(ctx context.Context) (string, error) {
 	return v, nil
 }
 
+func (r *AskeyRouter) restoreRadios(radios []radioXML, wasEnabled []bool, easyMesh string) error {
+	var errs []string
+	for id := range radios {
+		if !wasEnabled[id] { continue }
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		writeErr := r.setRadio(restoreCtx, radios[id], "1", easyMesh)
+		state, readErr := r.getRadio(restoreCtx, id)
+		cancel()
+		if readErr != nil || state.Admin != "1" {
+			errs = append(errs, fmt.Sprintf("radio %d restore: write=%v state=%q read=%v", id, writeErr, state.Admin, readErr))
+		}
+	}
+	if len(errs) > 0 { return errors.New(strings.Join(errs, "; ")) }
+	return nil
+}
+
 func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 	if err := r.ensureLogin(ctx); err != nil { return err }
 	radios := make([]radioXML, 2)
 	for id := 0; id < 2; id++ {
-		radio, err := r.getRadio(ctx, id); if err != nil { return fmt.Errorf("read Wi-Fi radio %d: %w", id, err) }
+		radio, err := r.getRadio(ctx, id)
+		if err != nil { return fmt.Errorf("read Wi-Fi radio %d: %w", id, err) }
+		if radio.ID != strconv.Itoa(id) { return fmt.Errorf("router returned radio ID %q for requested radio %d", radio.ID, id) }
+		if radio.Admin != "0" && radio.Admin != "1" { return fmt.Errorf("router returned invalid admin state %q for radio %d", radio.Admin, id) }
 		radios[id] = radio
 	}
 	easyMesh, err := r.easyMeshState(ctx)
 	if err != nil { return fmt.Errorf("read 5 GHz EasyMesh state: %w", err) }
 	wasEnabled := []bool{radios[0].Admin == "1", radios[1].Admin == "1"}
+	if !wasEnabled[0] && !wasEnabled[1] { return errors.New("both Wi-Fi radios were already disabled; refusing an unnecessary restart") }
+
+	// Once we begin changing radio state, always attempt restoration using
+	// independent bounded contexts, including when the caller is cancelled.
+	var restoreOnce sync.Once
+	var restoreErr error
+	restore := func() error {
+		restoreOnce.Do(func() { restoreErr = r.restoreRadios(radios, wasEnabled, easyMesh) })
+		return restoreErr
+	}
+	defer func() { _ = restore() }()
+
 	var disableErrs []string
-	for id := 0; id < 2; id++ {
+	for id := range radios {
 		if !wasEnabled[id] { continue }
-		if err := r.setRadio(ctx, radios[id], "0", easyMesh); err != nil {
-			checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			state, checkErr := r.getRadio(checkCtx, id)
-			cancel()
-			if checkErr != nil || state.Admin != "0" {
-				disableErrs = append(disableErrs, fmt.Sprintf("radio %d disable: %v (state=%q, read error=%v)", id, err, state.Admin, checkErr))
-			}
+		writeErr := r.setRadio(ctx, radios[id], "0", easyMesh)
+		checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		state, readErr := r.getRadio(checkCtx, id)
+		cancel()
+		if readErr != nil || state.Admin != "0" {
+			disableErrs = append(disableErrs, fmt.Sprintf("radio %d disable not verified: write=%v state=%q read=%v", id, writeErr, state.Admin, readErr))
 		}
 	}
 	if len(disableErrs) > 0 {
-		var restoreErrs []string
-		for id := 0; id < 2; id++ {
-			if !wasEnabled[id] { continue }
-			restoreCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			restoreErr := r.setRadio(restoreCtx, radios[id], "1", easyMesh)
-			state, checkErr := r.getRadio(restoreCtx, id)
-			cancel()
-			if restoreErr != nil || checkErr != nil || state.Admin != "1" {
-				restoreErrs = append(restoreErrs, fmt.Sprintf("radio %d restore: write=%v state=%q read=%v", id, restoreErr, state.Admin, checkErr))
-			}
-		}
-		return fmt.Errorf("%s; restoration: %s", strings.Join(disableErrs, "; "), strings.Join(restoreErrs, "; "))
+		restoreErr := restore()
+		if restoreErr != nil { return fmt.Errorf("%s; restoration failed: %w", strings.Join(disableErrs, "; "), restoreErr) }
+		return errors.New(strings.Join(disableErrs, "; "))
 	}
-	timer := time.NewTimer(r.cfg.WiFiOff); defer timer.Stop()
-	select { case <-ctx.Done(): return ctx.Err(); case <-timer.C: }
+
+	timer := time.NewTimer(r.cfg.WiFiOff)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		restoreErr := restore()
+		if restoreErr != nil { return fmt.Errorf("%w; Wi-Fi restoration failed: %v", ctx.Err(), restoreErr) }
+		return ctx.Err()
+	case <-timer.C:
+	}
+	if err := restore(); err != nil { return fmt.Errorf("Wi-Fi restoration failed: %w", err) }
+
 	var errs []string
-	for id := 0; id < 2; id++ {
-		if !wasEnabled[id] { continue }
-		restoreCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		writeErr := r.setRadio(restoreCtx, radios[id], "1", easyMesh)
-		state, checkErr := r.getRadio(restoreCtx, id)
-		cancel()
-		if checkErr != nil || state.Admin != "1" {
-			errs = append(errs, fmt.Sprintf("radio %d restore: write=%v (verified state=%q, read error=%v)", id, writeErr, state.Admin, checkErr))
-		}
-	}
-	for id := 0; id < 2; id++ {
+	for id := range radios {
 		if !wasEnabled[id] { continue }
 		checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		state, checkErr := r.getRadio(checkCtx, id); cancel()
+		state, checkErr := r.getRadio(checkCtx, id)
+		cancel()
 		if checkErr != nil || state.Admin != "1" || state.Operational != "up" {
 			errs = append(errs, fmt.Sprintf("radio %d not operational (admin=%q operational=%q error=%v)", id, state.Admin, state.Operational, checkErr))
 		}
@@ -261,4 +312,3 @@ func (r *AskeyRouter) Recover(ctx context.Context) error {
 	if err := r.restartWiFi(ctx); err != nil { return err }
 	return nil
 }
-
