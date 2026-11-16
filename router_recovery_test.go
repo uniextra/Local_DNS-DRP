@@ -288,3 +288,40 @@ func TestRecoverLogsInAgainForEveryRecovery(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeRouterModel(t *testing.T) {
+	tests := []struct {
+		name string
+		input string
+		want string
+	}{
+		{name: "empty uses backwards-compatible default", input: "", want: RouterModelAskeyRTF8316VW},
+		{name: "whitespace uses default", input: "  ", want: RouterModelAskeyRTF8316VW},
+		{name: "normalizes case and spaces", input: "  ASKEY-RTF8316VW  ", want: RouterModelAskeyRTF8316VW},
+		{name: "preserves other model slug", input: "tp-link-archer-ax55", want: "tp-link-archer-ax55"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeRouterModel(tc.input); got != tc.want {
+				t.Fatalf("normalizeRouterModel(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewRouterRecoverySelectsSupportedModel(t *testing.T) {
+	router, err := newRouterRecovery(RouterConfig{Model: RouterModelAskeyRTF8316VW})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := router.(*AskeyRouter); !ok {
+		t.Fatalf("adapter type = %T, want *AskeyRouter", router)
+	}
+}
+
+func TestNewRouterRecoveryRejectsUnknownModel(t *testing.T) {
+	_, err := newRouterRecovery(RouterConfig{Model: "unknown-router-123"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported ROUTER_MODEL") {
+		t.Fatalf("newRouterRecovery error = %v, want unsupported model error", err)
+	}
+}
