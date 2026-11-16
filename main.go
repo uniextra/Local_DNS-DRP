@@ -154,9 +154,12 @@ func loadConfig() (MonitorConfig, error) {
 	if err != nil {
 		return cfg, err
 	}
+	routerModel := normalizeRouterModel(os.Getenv("ROUTER_MODEL"))
+	cfg.Router.Model = routerModel
 	cfg.RecoveryEnabled = routerPassword != ""
 	if cfg.RecoveryEnabled {
 		cfg.Router = RouterConfig{
+			Model: routerModel,
 			URL: strings.TrimSpace(os.Getenv("ROUTER_URL")), Username: strings.TrimSpace(os.Getenv("ROUTER_USERNAME")),
 			Password: routerPassword, DNSPrimary: strings.TrimSpace(os.Getenv("DNS_PRIMARY")),
 			DNSSecondary: strings.TrimSpace(os.Getenv("DNS_SECONDARY")),
@@ -197,6 +200,11 @@ func loadConfig() (MonitorConfig, error) {
 			return cfg, err
 		}
 		cfg.Router.FailureThreshold = 3
+		// Validate model support before the monitor starts. Unknown models must
+		// never fall through to another manufacturer's router implementation.
+		if _, err := newRouterRecovery(cfg.Router); err != nil {
+			return cfg, err
+		}
 	}
 	return cfg, nil
 }
@@ -508,15 +516,23 @@ func run(ctx context.Context, cfg MonitorConfig) {
 	tg := newTelegram(cfg)
 	states := make(map[string]State, len(cfg.Targets))
 	var lines []string
-	var router *AskeyRouter
+	var router RouterRecovery
 	if cfg.RecoveryEnabled {
-		router = newAskeyRouter(cfg.Router)
-		log.Printf("Askey router recovery enabled for %s", cfg.Router.URL)
-		if strings.HasPrefix(strings.ToLower(cfg.Router.URL), "http://") {
-			log.Printf("WARN ROUTER_URL uses plain HTTP: router credentials and session data are not encrypted in transit")
+		var err error
+		router, err = newRouterRecovery(cfg.Router)
+		if err != nil {
+			// loadConfig validates this already; keep runtime fail-safe if a
+			// caller constructs MonitorConfig directly in an embedded use.
+			log.Printf("ERROR router recovery disabled: %v", err)
+			notify(tg, fmt.Sprintf("🔴 Recuperación del router desactivada: %v", err))
+		} else {
+			log.Printf("Router recovery enabled: model=%s url=%s", cfg.Router.Model, cfg.Router.URL)
+			if strings.HasPrefix(strings.ToLower(cfg.Router.URL), "http://") {
+				log.Printf("WARN ROUTER_URL uses plain HTTP: router credentials and session data are not encrypted in transit")
+			}
 		}
 	} else {
-		log.Printf("Askey router recovery disabled: ROUTER_PASSWORD is not set")
+		log.Printf("Router recovery disabled: ROUTER_PASSWORD is not set")
 	}
 	consecutiveAllDown := 0
 	lastRecovery := time.Time{}
@@ -560,7 +576,7 @@ func run(ctx context.Context, cfg MonitorConfig) {
 					// Not an AdGuard problem: the public resolvers are unreachable too.
 					// Leave the router alone and look again on the next cycle; the
 					// cooldown is only consumed by a recovery that actually starts.
-					log.Printf("WARN Askey router recovery skipped: fallback DNS %s / %s do not answer either (%s)", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary, detail)
+					log.Printf("WARN router recovery skipped (model=%s): fallback DNS %s / %s do not answer either (%s)", cfg.Router.Model, cfg.Router.DNSPrimary, cfg.Router.DNSSecondary, detail)
 					if !fallbackSkipNotified {
 						fallbackSkipNotified = true
 						notify(tg, fmt.Sprintf("🟠 Todos los DNS monitorizados están caídos, pero los DNS de respaldo (%s / %s) tampoco responden: parece una caída de internet, no de AdGuard. No se modifica el router; se reintentará en cada comprobación.", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
@@ -568,16 +584,16 @@ func run(ctx context.Context, cfg MonitorConfig) {
 				} else {
 					fallbackSkipNotified = false
 					lastRecovery = time.Now()
-					notify(tg, fmt.Sprintf("🚨 AdGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router Askey (%s).", cfg.Router.URL))
+					notify(tg, fmt.Sprintf("🚨 AdGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router %s (%s).", cfg.Router.Model, cfg.Router.URL))
 					recoveryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 					err := router.Recover(recoveryCtx)
 					cancel()
 					if err != nil {
-						log.Printf("ERROR Askey router recovery failed: %v", err)
-						notify(tg, fmt.Sprintf("🔴 ERROR recuperación router Askey\n%s", err))
+						log.Printf("ERROR router recovery failed (model=%s): %v", cfg.Router.Model, err)
+						notify(tg, fmt.Sprintf("🔴 ERROR recuperación router %s\n%s", cfg.Router.Model, err))
 					} else {
-						log.Printf("Askey router recovery completed: DNS=%s,%s; Wi-Fi radios restarted", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
-						notify(tg, fmt.Sprintf("🟢 Recuperación router Askey completada\nDNS DHCP: %s / %s\nWi-Fi 2,4 y 5 GHz reiniciados", cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
+						log.Printf("Router recovery completed (model=%s): DNS=%s,%s", cfg.Router.Model, cfg.Router.DNSPrimary, cfg.Router.DNSSecondary)
+						notify(tg, fmt.Sprintf("🟢 Recuperación del router %s completada\nDNS DHCP: %s / %s", cfg.Router.Model, cfg.Router.DNSPrimary, cfg.Router.DNSSecondary))
 					}
 				}
 			}
