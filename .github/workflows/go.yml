@@ -1,26 +1,55 @@
-name: Go
+name: Go CI
 
 on:
   push:
     paths:
       - "*.go"
       - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/go.yml"
+      - ".github/workflows/adguardhome-restore-tests.yml"
   pull_request:
     paths:
       - "*.go"
       - "go.mod"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/go.yml"
+      - ".github/workflows/adguardhome-restore-tests.yml"
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: Format, test, vet and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.mod
-      - run: gofmt -w *.go
-      - run: go test ./...
-      - run: go vet ./...
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          files="$(gofmt -l *.go)"
+          if [[ -n "$files" ]]; then
+            echo "The following Go files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+
+      - name: Static analysis
+        run: go vet ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -o /tmp/local-dns-drp .
