@@ -65,3 +65,78 @@ func TestLoadConfigRequiresTelegramCredentials(t *testing.T) {
 	_, err := loadConfig()
 	if err == nil || !strings.Contains(err.Error(), "TELEGRAM_BOT_TOKEN") { t.Fatalf("unexpected error: %v", err) }
 }
+
+
+func buildAResponse(query []byte, questionOverride []byte, answerOwner []byte) []byte {
+	question := query[12:]
+	if questionOverride != nil {
+		question = questionOverride
+	}
+	response := make([]byte, 12)
+	binary.BigEndian.PutUint16(response[0:2], binary.BigEndian.Uint16(query[0:2]))
+	binary.BigEndian.PutUint16(response[2:4], 0x8180)
+	binary.BigEndian.PutUint16(response[4:6], 1)
+	binary.BigEndian.PutUint16(response[6:8], 1)
+	response = append(response, question...)
+	if answerOwner == nil {
+		answerOwner = []byte{0xc0, 0x0c}
+	}
+	response = append(response, answerOwner...)
+	response = append(response, 0, 1, 0, 1) // A, IN
+	response = append(response, 0, 0, 0, 60) // TTL
+	response = append(response, 0, 4, 93, 184, 216, 34)
+	return response
+}
+
+func TestValidateDNSResponse(t *testing.T) {
+	query, err := makeDNSQuery("example.com", 0x1234)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("valid answer", func(t *testing.T) {
+		if err := validateDNSResponse(query, buildAResponse(query, nil, nil)); err != nil {
+			t.Fatalf("valid response rejected: %v", err)
+		}
+	})
+	t.Run("mismatched question", func(t *testing.T) {
+		question := append([]byte(nil), query[12:]...)
+		question[2] = 'x'
+		if err := validateDNSResponse(query, buildAResponse(query, question, nil)); err == nil {
+			t.Fatal("expected mismatched question to be rejected")
+		}
+	})
+	t.Run("unrelated answer owner", func(t *testing.T) {
+		owner := []byte{9, 'u', 'n', 'r', 'e', 'l', 'a', 't', 'e', 'd', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0}
+		if err := validateDNSResponse(query, buildAResponse(query, nil, owner)); err == nil {
+			t.Fatal("expected unrelated answer owner to be rejected")
+		}
+	})
+	t.Run("mismatched transaction ID", func(t *testing.T) {
+		response := buildAResponse(query, nil, nil)
+		binary.BigEndian.PutUint16(response[0:2], 0xffff)
+		if err := validateDNSResponse(query, response); err == nil {
+			t.Fatal("expected mismatched transaction ID to be rejected")
+		}
+	})
+}
+
+func TestMakeDNSQueryRejectsNamesOver255WireOctets(t *testing.T) {
+	domain := strings.Join([]string{
+		strings.Repeat("a", 63), strings.Repeat("b", 63),
+		strings.Repeat("c", 63), strings.Repeat("d", 60),
+	}, ".")
+	if _, err := makeDNSQuery(domain, 1); err == nil {
+		t.Fatal("expected overlong DNS name to be rejected")
+	}
+}
+
+func TestEnvDurationRejectsNonFiniteAndOutOfRangeValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf", "1e100", "1e-100", "0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("TEST_DURATION", value)
+			if _, err := envDuration("TEST_DURATION", "60"); err == nil {
+				t.Fatalf("envDuration(%q) expected error", value)
+			}
+		})
+	}
+}
