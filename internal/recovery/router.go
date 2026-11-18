@@ -51,7 +51,9 @@ func NewRouterRecovery(cfg RouterConfig) (RouterRecovery, error) {
 	switch model {
 	case RouterModelAskeyRTF8316VW:
 		return NewAskeyRouter(cfg), nil
+	case RouterModelAsusGeneric:
+		return newAsusGenericRouter(cfg)
 	default:
-		return nil, fmt.Errorf("unsupported ROUTER_MODEL %q; currently supported model: %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW)
+		return nil, fmt.Errorf("unsupported ROUTER_MODEL %q; supported models: %s, %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW, RouterModelAsusGeneric)
 	}
 }

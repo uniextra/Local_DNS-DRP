@@ -1,6 +1,6 @@
 # Local_DNS-DRP
 
-Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router configurado cuando todos los servidores DNS monitorizados dejan de responder. Incluye un adaptador para el Askey RTF8316VW y una interfaz para incorporar otros modelos mediante contribuciones.
+Monitor DNS ligero escrito en Go para comprobar varias instancias de AdGuard Home y ejecutar una recuperación automática del router configurado cuando todos los servidores DNS monitorizados dejan de responder. Incluye un adaptador para el Askey RTF8316VW, un adaptador ASUSWRT experimental (`asus-generic`) y una interfaz para incorporar otros modelos mediante contribuciones.
 
 El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen multi-arquitectura para Linux `amd64` y `arm64` (incluidas Raspberry Pi compatibles) y utiliza Telegram para notificar los cambios de estado y los resultados de recuperación.
 
@@ -42,7 +42,7 @@ Consulta [docs/architecture.md](docs/architecture.md) para ver el diagrama de fl
 - Docker Engine y Docker Compose.
 - Conectividad desde el contenedor hacia los destinos de `TARGETS` mediante UDP en el puerto DNS configurado.
 - Conectividad HTTPS saliente (TCP 443) hacia Telegram.
-- Para utilizar la recuperación automática: un modelo de router con adaptador implementado, accesible desde el contenedor y sus credenciales web. Actualmente solo está soportado `askey-rtf8316vw`.
+- Para utilizar la recuperación automática: un router con adaptador implementado, accesible desde el contenedor y sus credenciales web. `askey-rtf8316vw` está soportado; `asus-generic` es experimental y requiere validar el modelo y firmware concretos.
 
 ## Despliegue
 
@@ -155,7 +155,7 @@ Cada combinación IP/puerto debe ser única.
 
 | Variable | Valor de ejemplo | Descripción |
 | --- | --- | --- |
-| `ROUTER_MODEL` | `askey-rtf8316vw` | Identificador del adaptador que se utilizará. Si se omite, se usa `askey-rtf8316vw` por compatibilidad. Los identificadores no soportados provocan un error de configuración cuando la recuperación está habilitada. |
+| `ROUTER_MODEL` | `askey-rtf8316vw` | Identificador del adaptador que se utilizará. Si se omite, se usa `askey-rtf8316vw` por compatibilidad. `asus-generic` es experimental y está dirigido a firmwares ASUSWRT/Asuswrt-Merlin. Los identificadores no soportados provocan un error de configuración cuando la recuperación está habilitada. |
 | `ROUTER_URL` | `http://192.168.1.1` | URL HTTP(S) de administración del router seleccionado. Se recomienda HTTPS con un certificado confiable cuando el firmware lo permita. |
 | `ROUTER_USERNAME` | `1234` | Usuario web del router. |
 | `ROUTER_PASSWORD` | Vacío | Contraseña web del router. Si está vacía, la recuperación automática permanece desactivada. |
@@ -205,6 +205,48 @@ Se aplica un cooldown de 15 minutos por defecto para evitar repetir el procedimi
 **Importante:** la recuperación no revierte los DNS del DHCP. Cuando AdGuard vuelve a responder, los dispositivos siguen recibiendo `DNS_PRIMARY` / `DNS_SECONDARY` (y, por tanto, sin el filtrado de AdGuard) hasta que restaures a mano los DNS originales en el router.
 
 Los errores o timeouts de una petición de escritura DNS no se interpretan automáticamente como prueba de que el cambio no se aplicó: el servicio vuelve a leer la configuración DHCP y comprueba el valor real. Las órdenes Wi-Fi también se verifican mediante una lectura posterior, incluso si el POST devuelve HTTP 200. Si el firmware rechaza una sesión, el servicio intenta renovarla una sola vez. Los fallos de Telegram no deben bloquear la recuperación.
+
+## Recuperación ASUSWRT / Asuswrt-Merlin (experimental)
+
+El identificador `ROUTER_MODEL: "asus-generic"` selecciona un adaptador común para routers que implementan la API local de ASUSWRT. Está pensado para firmware ASUSWRT de ASUS y Asuswrt-Merlin; **no significa que cualquier router ASUS, firmware de operador o firmware de terceros sea compatible**.
+
+El adaptador utiliza la interfaz web local del router desde el contenedor Go. No instala scripts en el router, no utiliza SSH y no necesita ejecutar comandos de shell en el equipo.
+
+### Protocolo utilizado
+
+1. Se autentica mediante `/login.cgi` usando el usuario y contraseña del panel web.
+2. Obtiene el token de sesión ASUS y mantiene la cookie en un cliente HTTP aislado.
+3. Consulta variables NVRAM mediante `/appGet.cgi`.
+4. Modifica exclusivamente las variables DHCP `dhcp_dns1_x` y `dhcp_dns2_x` mediante `/applyapp.cgi`, nunca las variables DNS de WAN.
+5. Lee de nuevo ambas variables; si la escritura devuelve un error o timeout, consulta el estado antes de decidir que ha fallado. No repite a ciegas una escritura ambigua.
+6. Solicita `restart_dnsmasq` y vuelve a comprobar los valores.
+7. Descubre las radios disponibles leyendo `wl0_radio` a `wl7_radio`. Apaga temporalmente únicamente las que estaban encendidas, solicita `restart_wireless` y restaura su estado original.
+8. Comprueba por lectura posterior que las radios han vuelto a su estado inicial. Las radios que ya estaban apagadas permanecen apagadas.
+
+### Configuración
+
+En el Compose, cambia únicamente el selector:
+
+```yaml
+ROUTER_MODEL: "asus-generic"
+ROUTER_URL: "http://192.168.1.1"
+ROUTER_USERNAME: "admin"
+ROUTER_PASSWORD: "YOUR_ASUS_ROUTER_PASSWORD"
+```
+
+Mantén `DNS_PRIMARY`, `DNS_SECONDARY` y `WIFI_OFF_SECONDS` como en el resto de adaptadores.
+
+### Compatibilidad y límites
+
+**Estado experimental.**
+
+- La API y las claves NVRAM son comunes en distintas generaciones de ASUSWRT, pero los endpoints, autenticación, servicios y variables pueden cambiar entre modelos y builds.
+- No se autodetecta el fabricante ni el firmware para seleccionar este adaptador. Debes configurarlo expresamente con `ROUTER_MODEL=asus-generic`.
+- Si no se encuentran radios `wlN_radio`, si una respuesta no tiene el formato esperado o si no se confirma una escritura, el adaptador falla sin asumir compatibilidad.
+- No modifica los DNS de redes Guest ni los ámbitos DHCP específicos de SDN/VLAN. El soporte de firmware de operador, modos repetidor/AP, AiMesh, SDN/Guest Network, modelos Wi-Fi 7 u otras variantes debe validarse por separado. No se garantiza que todas sus radios estén representadas por las variables estándar.
+- La comprobación posterior verifica los valores NVRAM y la orden de reinicio del servicio; no equivale a capturar un intercambio DHCP de un cliente y validar su opción DNS. Las pruebas automatizadas utilizan un router simulado. Hasta validar modelos y versiones de firmware físicos (incluido un renew DHCP desde un cliente), considera el adaptador experimental y no una certificación de compatibilidad de todos los ASUS.
+
+La recuperación no revierte los DNS DHCP a los valores anteriores cuando AdGuard vuelve a responder; se aplica la misma consideración que con el adaptador Askey.
 
 ## Telegram
 
@@ -297,15 +339,23 @@ Lee la guía de [CONTRIBUTING.md](CONTRIBUTING.md), que explica qué informació
 
 El identificador se selecciona mediante `ROUTER_MODEL`. Actualmente:
 
-| Identificador | Router | Estado |
+| Identificador | Router / firmware | Estado |
 | --- | --- | --- |
 | `askey-rtf8316vw` | Askey RTF8316VW | Soportado |
+| `asus-generic` | ASUSWRT / Asuswrt-Merlin (varios modelos) | Experimental; validar modelo y firmware |
 
-Ejemplo en Docker Compose:
+Ejemplo para el Askey (valor por defecto):
 
 ```yaml
 environment:
   ROUTER_MODEL: "askey-rtf8316vw"
+```
+
+Para probar el adaptador ASUSWRT experimental:
+
+```yaml
+environment:
+  ROUTER_MODEL: "asus-generic"
 ```
 
 Si `ROUTER_MODEL` no se define, se conserva ese valor por defecto. Un modelo desconocido no activa ningún adaptador alternativo y provoca un error de configuración cuando hay una contraseña de router configurada.

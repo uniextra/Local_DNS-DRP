@@ -65,6 +65,20 @@ func TestLoadRecoveryDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadAsusGenericModel(t *testing.T) {
+	setBaseEnv(t)
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	t.Setenv("ROUTER_MODEL", "asus-generic")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if cfg.Router.Model != "asus-generic" {
+		t.Fatalf("Router.Model = %q, want asus-generic", cfg.Router.Model)
+	}
+}
+
 func TestLoadValidationErrors(t *testing.T) {
 	cases := []struct {
 		name string

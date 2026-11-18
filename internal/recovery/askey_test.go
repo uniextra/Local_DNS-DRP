@@ -22,6 +22,10 @@ func TestNewRouterRecoverySelector(t *testing.T) {
 	if err != nil || r == nil {
 		t.Fatalf("NewRouterRecovery('') = %v, %v", r, err)
 	}
+	asus, err := NewRouterRecovery(RouterConfig{Model: RouterModelAsusGeneric, URL: "http://192.168.1.1"})
+	if err != nil || asus == nil {
+		t.Fatalf("NewRouterRecovery('asus-generic') = %v, %v", asus, err)
+	}
 	if _, err := NewRouterRecovery(RouterConfig{Model: "unknown-vendor"}); err == nil {
 		t.Fatal("expected error for unsupported ROUTER_MODEL")
 	}
