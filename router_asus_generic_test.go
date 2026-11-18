@@ -163,13 +163,13 @@ func newAsusTestRouter(t *testing.T, mock *mockAsusWrt) (*AsusGenericRouter, fun
 	t.Helper()
 	server := httptest.NewServer(mock)
 	router, err := newAsusGenericRouter(RouterConfig{
-		Model:         RouterModelAsusGeneric,
-		URL:           server.URL,
-		Username:      "admin",
-		Password:      "router-secret",
-		DNSPrimary:    "1.1.1.1",
-		DNSSecondary:  "8.8.8.8",
-		WiFiOff:       time.Millisecond,
+		Model:        RouterModelAsusGeneric,
+		URL:          server.URL,
+		Username:     "admin",
+		Password:     "router-secret",
+		DNSPrimary:   "1.1.1.1",
+		DNSSecondary: "8.8.8.8",
+		WiFiOff:      time.Millisecond,
 	})
 	if err != nil {
 		server.Close()
