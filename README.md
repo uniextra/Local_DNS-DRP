@@ -23,7 +23,7 @@ El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen 
 - Docker Engine y Docker Compose.
 - Conectividad desde el contenedor hacia los destinos de `TARGETS` mediante UDP en el puerto DNS configurado.
 - Conectividad HTTPS saliente (TCP 443) hacia Telegram.
-- Para utilizar la recuperación automática: un modelo de router con adaptador implementado, accesible desde el contenedor y sus credenciales web. Actualmente solo está soportado `askey-rtf8316vw`.
+- Para utilizar la recuperación automática: un router con adaptador implementado, accesible desde el contenedor y sus credenciales web. `askey-rtf8316vw` está soportado; `asus-generic` es experimental y requiere validar el modelo y firmware concretos.
 
 ## Despliegue
 
