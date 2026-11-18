@@ -224,8 +224,8 @@ Mantén `DNS_PRIMARY`, `DNS_SECONDARY` y `WIFI_OFF_SECONDS` como en el resto de 
 - La API y las claves NVRAM son comunes en distintas generaciones de ASUSWRT, pero los endpoints, autenticación, servicios y variables pueden cambiar entre modelos y builds.
 - No se autodetecta el fabricante ni el firmware para seleccionar este adaptador. Debes configurarlo expresamente con `ROUTER_MODEL=asus-generic`.
 - Si no se encuentran radios `wlN_radio`, si una respuesta no tiene el formato esperado o si no se confirma una escritura, el adaptador falla sin asumir compatibilidad.
-- El soporte de routers con firmware de operador, modos repetidor/AP, AiMesh, SDN/Guest Network, modelos Wi-Fi 7 u otras variantes debe validarse por separado. No se garantiza que todas sus radios estén representadas por las variables estándar.
-- Las pruebas automatizadas utilizan un router simulado. Hasta validar modelos y versiones de firmware físicos, considera el adaptador experimental y no una certificación de compatibilidad de todos los ASUS.
+- No modifica los DNS de redes Guest ni los ámbitos DHCP específicos de SDN/VLAN. El soporte de firmware de operador, modos repetidor/AP, AiMesh, SDN/Guest Network, modelos Wi-Fi 7 u otras variantes debe validarse por separado. No se garantiza que todas sus radios estén representadas por las variables estándar.
+- La comprobación posterior verifica los valores NVRAM y la orden de reinicio del servicio; no equivale a capturar un intercambio DHCP de un cliente y validar su opción DNS. Las pruebas automatizadas utilizan un router simulado. Hasta validar modelos y versiones de firmware físicos (incluido un renew DHCP desde un cliente), considera el adaptador experimental y no una certificación de compatibilidad de todos los ASUS.
 
 La recuperación no revierte los DNS DHCP a los valores anteriores cuando AdGuard vuelve a responder; se aplica la misma consideración que con el adaptador Askey.
 
