@@ -132,7 +132,7 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 	}
 
 	m.fallbackSkipNotified = false
-	m.notify(ctx, fmt.Sprintf("🚨 Local_DNS-DRP — Iniciando recuperación\n\nTodos los DNS monitorizados están caídos.\n• Router: %s\n• URL: %s\n• DNS destino: %s / %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
+	m.notify(ctx, fmt.Sprintf("🚨 Local_DNS-DRP — Activando DRP en el router\n\nTodos los DNS locales han fallado (%d comprobaciones seguidas). Se procede a cambiar los DNS DHCP del router a los servidores de respaldo:\n• Router: %s (%s)\n• Acción: actualizar DNS DHCP -> %s / %s", m.cfg.Router.FailureThreshold, m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 	recoveryCtx, cancel := context.WithTimeout(ctx, 2*time.Minute+m.cfg.Router.WiFiOff)
 	err := m.router.Recover(recoveryCtx)
 	cancel()
@@ -140,11 +140,11 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 
 	if err != nil {
 		log.Printf("ERROR router recovery failed (model=%s): %v", m.cfg.Router.Model, err)
-		m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — Error en recuperación\n\n• Router: %s\n• Detalle: %s", m.cfg.Router.Model, err))
+		m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — Error al ejecutar DRP en el router\n\nNo se pudieron actualizar los DNS DHCP del router:\n• Router: %s (%s)\n• DNS intentados: %s / %s\n• Detalle: %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary, err))
 		return
 	}
 	log.Printf("Router recovery completed (model=%s): DNS=%s,%s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary)
-	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — Recuperación completada\n\n• Router: %s\n• DNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
+	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DRP completado (DNS del router actualizados)\n\nEl router ya distribuye los DNS de respaldo por DHCP:\n• Router: %s (%s)\n• Nuevos DNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 }
 
 // Run starts the monitoring loop and blocks until ctx is cancelled.
