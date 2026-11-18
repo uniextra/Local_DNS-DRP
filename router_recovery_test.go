@@ -298,6 +298,7 @@ func TestNormalizeRouterModel(t *testing.T) {
 		{name: "empty uses backwards-compatible default", input: "", want: RouterModelAskeyRTF8316VW},
 		{name: "whitespace uses default", input: "  ", want: RouterModelAskeyRTF8316VW},
 		{name: "normalizes case and spaces", input: "  ASKEY-RTF8316VW  ", want: RouterModelAskeyRTF8316VW},
+		{name: "normalizes ASUS generic slug", input: " ASUS-GENERIC ", want: RouterModelAsusGeneric},
 		{name: "preserves other model slug", input: "tp-link-archer-ax55", want: "tp-link-archer-ax55"},
 	}
 	for _, tc := range tests {
@@ -316,6 +317,19 @@ func TestNewRouterRecoverySelectsSupportedModel(t *testing.T) {
 	}
 	if _, ok := router.(*AskeyRouter); !ok {
 		t.Fatalf("adapter type = %T, want *AskeyRouter", router)
+	}
+}
+
+func TestNewRouterRecoverySelectsAsusGenericModel(t *testing.T) {
+	router, err := newRouterRecovery(RouterConfig{
+		Model: RouterModelAsusGeneric,
+		URL:   "http://192.0.2.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := router.(*AsusGenericRouter); !ok {
+		t.Fatalf("adapter type = %T, want *AsusGenericRouter", router)
 	}
 }
 

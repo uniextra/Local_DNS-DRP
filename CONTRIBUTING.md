@@ -100,10 +100,32 @@ La variable de entorno `ROUTER_MODEL` selecciona el adaptador. Utiliza un identi
 - `askey-rtf8316vw`
 - `tplink-archer-ax55`
 - `fritzbox-7530-ax`
+- `asus-generic` (adaptador experimental para ASUSWRT/Asuswrt-Merlin)
 
-Usa exactamente el mismo identificador en el selector de adaptadores, los tests, la tabla de routers soportados del README y los ejemplos de Compose. No utilices como identificador un hostname, una IP, una versión de firmware ni un alias definido por cada usuario.
+Usa exactamente el mismo identificador en el selector de adaptadores, los tests, la tabla de routers soportados del README y los ejemplos de Compose. No utilices como identificador un hostname, una IP, una versión de firmware ni un alias definido por cada usuario. `asus-generic` es la excepción intencionada al esquema por modelo: identifica una familia de firmware con compatibilidad experimental.
 
 Por compatibilidad, si se omite `ROUTER_MODEL` se selecciona `askey-rtf8316vw`. Cuando `ROUTER_PASSWORD` habilita la recuperación, un identificador desconocido debe producir un error de configuración. Nunca debe caer por defecto en el adaptador Askey.
+
+### Notas para el adaptador ASUS genérico
+
+El identificador `asus-generic` es un adaptador de familia de firmware, no de un único modelo. Su ámbito previsto es ASUSWRT y Asuswrt-Merlin que expongan la API web local común.
+
+La implementación de referencia en `router_asus_generic.go` utiliza:
+
+- `/login.cgi` para autenticación y obtención de `asus_token`.
+- `/appGet.cgi` con `nvram_get(...)` para lecturas.
+- `/applyapp.cgi` con `action_mode=apply` para cambios y ejecución de servicios.
+- `dhcp_dns1_x` y `dhcp_dns2_x` para los DNS anunciados por DHCP. No los confundas con `wan*_dns*`, que son DNS de WAN.
+- `restart_dnsmasq` después de modificar DNS DHCP.
+- `wlN_radio` y `restart_wireless` para controlar las radios disponibles.
+
+Estas convenciones aparecen en implementaciones públicas de ASUSWRT, pero no constituyen un contrato universal de todos los firmwares ASUS. Antes de ampliar la compatibilidad, comprueba el modelo, la revisión de hardware y el build exactos. Las variantes con firmware de operador, versiones antiguas, SDN/Guest Network, AiMesh, modos AP/repetidor y modelos Wi-Fi 7 pueden requerir tratamiento específico.
+
+El adaptador debe seguir fallando de forma segura si faltan variables, el estado no es `0/1`, la API no devuelve la estructura esperada o una operación no se puede verificar. No añadas un fallback silencioso al adaptador Askey ni supongas que existen exactamente dos radios. Mantén la detección dinámica y documenta cualquier límite de unidades.
+
+No implementes la recuperación mediante SSH, ejecución de shell, `nvram` CLI ni scripts instalados en el router: el servicio se comunica con la API web desde Go. Tampoco conviertas la lectura de una variable en prueba suficiente de que los clientes DHCP reciben ese DNS; documenta las lecturas posteriores y la recarga de `dnsmasq`.
+
+El estado de soporte de `asus-generic` es **experimental** hasta que se disponga de pruebas físicas reproducibles en modelos y builds concretos. Añade al README una matriz de compatibilidad con la evidencia real; no marques como probado todo el catálogo ASUS solo porque comparta ASUSWRT.
 
 ## 5. Implementar un adaptador independiente
 

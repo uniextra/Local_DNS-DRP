@@ -373,6 +373,21 @@ func TestLoadConfigUsesExplicitRouterModel(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsAsusGenericRouterModel(t *testing.T) {
+	t.Setenv("TARGETS", "home=192.168.1.2")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
+	t.Setenv("TELEGRAM_CHAT_ID", "chat")
+	t.Setenv("ROUTER_PASSWORD", "secret")
+	t.Setenv("ROUTER_MODEL", " ASUS-GENERIC ")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Router.Model != RouterModelAsusGeneric {
+		t.Fatalf("router model = %q, want %q", cfg.Router.Model, RouterModelAsusGeneric)
+	}
+}
+
 func TestLoadConfigRejectsUnsupportedRouterModelWhenRecoveryEnabled(t *testing.T) {
 	t.Setenv("TARGETS", "home=192.168.1.2")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "token")
