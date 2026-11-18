@@ -1,4 +1,4 @@
-package main
+package recovery
 
 import (
 	"context"
@@ -14,62 +14,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uniextra/Adguardhome-DRP/internal/notify"
 )
 
-// RouterModelAskeyRTF8316VW is the stable ROUTER_MODEL identifier for the
-// currently supported Askey RTF8316VW firmware adapter.
-const RouterModelAskeyRTF8316VW = "askey-rtf8316vw"
-
-// DefaultRouterModel preserves the original Askey recovery behavior when
-// ROUTER_MODEL is omitted from existing deployments.
-const DefaultRouterModel = RouterModelAskeyRTF8316VW
-
-// RouterRecovery is implemented by each router-specific recovery adapter.
-// Keep vendor/firmware HTTP details behind this interface.
-type RouterRecovery interface {
-	Recover(context.Context) error
-}
-
-type RouterConfig struct {
-	Model                    string
-	URL, Username, Password  string
-	DNSPrimary, DNSSecondary string
-	WiFiOff                  time.Duration
-	FailureThreshold         int
-	Cooldown                 time.Duration
-}
-
-// normalizeRouterModel converts the supplied model identifier into its
-// canonical form. Identifiers are documented as lower-case slugs.
-func normalizeRouterModel(model string) string {
-	model = strings.ToLower(strings.TrimSpace(model))
-	if model == "" {
-		return DefaultRouterModel
-	}
-	return model
-}
-
-// newRouterRecovery selects the adapter for ROUTER_MODEL. Unknown models are
-// rejected instead of accidentally sending Askey-specific requests to another
-// manufacturer's router.
-func newRouterRecovery(cfg RouterConfig) (RouterRecovery, error) {
-	model := normalizeRouterModel(cfg.Model)
-	cfg.Model = model
-	switch model {
-	case RouterModelAskeyRTF8316VW:
-		return newAskeyRouter(cfg), nil
-	default:
-		return nil, fmt.Errorf("unsupported ROUTER_MODEL %q; currently supported model: %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW)
-	}
-}
-
+// AskeyRouter automates DHCP DNS updates and Wi-Fi radio restarts on an Askey RTF8316VW.
 type AskeyRouter struct {
 	cfg        RouterConfig
 	client     *http.Client
 	sessionKey string
 }
 
-func newAskeyRouter(cfg RouterConfig) *AskeyRouter {
+// NewAskeyRouter creates an AskeyRouter client with an isolated cookie jar.
+func NewAskeyRouter(cfg RouterConfig) *AskeyRouter {
 	jar, _ := cookiejar.New(nil)
 	return &AskeyRouter{cfg: cfg, client: &http.Client{Timeout: 30 * time.Second, Jar: jar}}
 }
@@ -98,7 +55,7 @@ func (r *AskeyRouter) request(ctx context.Context, method, path string, form url
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	req.Header.Set("Referer", strings.TrimRight(r.cfg.URL, "/")+"/te_wifi.asp")
+	req.Header.Set("Referer", r.endpoint("/te_wifi.asp"))
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -109,9 +66,8 @@ func (r *AskeyRouter) request(ctx context.Context, method, path string, form url
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		// The message is logged and sent to Telegram: keep it to a short,
-		// single-line summary instead of a whole HTML error page.
-		summary := truncateRunes(strings.Join(strings.Fields(string(data)), " "), 200)
+		// Keep error summaries short and single-line for logs and Telegram alerts.
+		summary := notify.TruncateRunes(strings.Join(strings.Fields(string(data)), " "), 200)
 		return nil, fmt.Errorf("router HTTP %s: %s", resp.Status, summary)
 	}
 	return data, nil
@@ -150,12 +106,9 @@ func (r *AskeyRouter) ensureLogin(ctx context.Context) error {
 
 func (r *AskeyRouter) invalidateSession() { r.sessionKey = "" }
 
-var jsValue = func(name string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)(?:var\s+)?` + regexp.QuoteMeta(name) + `\s*=\s*["']([^"']*)["']`)
-}
-
 func extractJS(page []byte, name string) (string, error) {
-	m := jsValue(name).FindSubmatch(page)
+	re := regexp.MustCompile(`(?i)(?:var\s+)?` + regexp.QuoteMeta(name) + `\s*=\s*["']([^"']*)["']`)
+	m := re.FindSubmatch(page)
 	if len(m) < 2 {
 		return "", fmt.Errorf("router page field %q not found", name)
 	}
@@ -243,6 +196,7 @@ type wifiXML struct {
 	Result  string   `xml:"Result"`
 	Radio   radioXML `xml:"dpm_cfg_wifi"`
 }
+
 type radioXML struct {
 	ID          string `xml:"dpm_cfg_wifi_id"`
 	Admin       string `xml:"radio_adm_state"`
@@ -355,8 +309,6 @@ func (r *AskeyRouter) setRadio(ctx context.Context, radio radioXML, admin string
 			}
 			return requestErr
 		}
-		// Some firmware versions return an XML Result field on write. Treat
-		// a non-zero result as a possible expired session and retry once.
 		var acknowledgement struct {
 			Result string `xml:"Result"`
 		}
@@ -379,11 +331,7 @@ func (r *AskeyRouter) easyMeshState(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	v, err := extractJS(page, "easymesh_adm_state")
-	if err != nil {
-		return "", err
-	}
-	return v, nil
+	return extractJS(page, "easymesh_adm_state")
 }
 
 func (r *AskeyRouter) restoreRadios(radios []radioXML, wasEnabled []bool, easyMesh string) error {
@@ -457,9 +405,8 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 		}
 	}
 	if len(disableErrs) > 0 {
-		restoreErr := restore()
-		if restoreErr != nil {
-			return fmt.Errorf("%s; restoration failed: %w", strings.Join(disableErrs, "; "), restoreErr)
+		if err := restore(); err != nil {
+			return fmt.Errorf("%s; restoration failed: %w", strings.Join(disableErrs, "; "), err)
 		}
 		return errors.New(strings.Join(disableErrs, "; "))
 	}
@@ -468,9 +415,8 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		timer.Stop()
-		restoreErr := restore()
-		if restoreErr != nil {
-			return fmt.Errorf("%w; Wi-Fi restoration failed: %v", ctx.Err(), restoreErr)
+		if err := restore(); err != nil {
+			return fmt.Errorf("%w; Wi-Fi restoration failed: %v", ctx.Err(), err)
 		}
 		return ctx.Err()
 	case <-timer.C:
@@ -497,16 +443,11 @@ func (r *AskeyRouter) restartWiFi(ctx context.Context) error {
 	return nil
 }
 
+// Recover authenticates with the router, updates DHCP DNS servers, and restarts Wi-Fi radios.
 func (r *AskeyRouter) Recover(ctx context.Context) error {
-	// Recoveries are rare, so never trust a session cached by an earlier one:
-	// the router expires sessions silently and may answer with a 200 login page
-	// that only looks like a malformed response further down the line.
 	r.invalidateSession()
 	if err := r.updateDNS(ctx); err != nil {
 		return err
 	}
-	if err := r.restartWiFi(ctx); err != nil {
-		return err
-	}
-	return nil
+	return r.restartWiFi(ctx)
 }

@@ -5,7 +5,7 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 git config --local core.hooksPath .githooks
-git config --local commit.template .gitmessage
+git config --local commit.template "$repo_root/.gitmessage"
 
 git config --local --unset-all ai.coauthor >/dev/null 2>&1 || true
 git config --local --add ai.coauthor "Codex <noreply@openai.com>"

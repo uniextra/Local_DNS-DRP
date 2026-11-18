@@ -7,18 +7,24 @@ commit_source=${2-}
 [[ "${SKIP_AI_COAUTHORS:-0}" == "1" ]] && exit 0
 [[ "$commit_source" == "merge" ]] && exit 0
 
-mapfile -t coauthors < <(git config --get-all ai.coauthor || true)
+coauthors=()
+while IFS= read -r line; do
+    [[ -n "$line" ]] && coauthors+=("$line")
+done < <(git config --get-all ai.coauthor || true)
+
 [[ ${#coauthors[@]} -eq 0 ]] && exit 0
 
 append_trailer() {
     local entry=$1
     local trailer="Co-authored-by: $entry"
 
-    if grep -Fiq "$trailer" "$msg_file"; then
+    if grep -Fxiq "$trailer" "$msg_file"; then
         return
     fi
 
-    local tmp_file="${msg_file}.tmp.$$"
+    local tmp_file
+    tmp_file=$(mktemp "${msg_file}.tmp.XXXXXX")
+    trap 'rm -f "$tmp_file"' RETURN
 
     awk -v trailer="$trailer" '
         { lines[NR]=$0; if (NF) last=NR }
