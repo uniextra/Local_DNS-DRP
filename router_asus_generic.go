@@ -100,7 +100,7 @@ func (r *AsusGenericRouter) login(ctx context.Context) error {
 	// AsusWrt's local login endpoint receives a Base64 user:password value
 	// in login_authorization. The returned asus_token is scoped to this host.
 	r.token = ""
-	r.client.Jar.SetCookies(r.base, nil)
+	r.client.Jar.SetCookies(r.base, []*http.Cookie{{Name: "asus_token", Path: "/", MaxAge: -1}})
 	credentials := base64.StdEncoding.EncodeToString([]byte(r.cfg.Username + ":" + r.cfg.Password))
 	body := []byte(url.QueryEscape("login_authorization=" + credentials))
 	data, err := r.post(ctx, "login.cgi", "text/plain; charset=utf-8", body)
@@ -232,7 +232,7 @@ func (r *AsusGenericRouter) pushAction(ctx context.Context, action map[string]an
 	if err != nil {
 		return fmt.Errorf("encode ASUS action: %w", err)
 	}
-	data, err := r.post(ctx, "applyapp.cgi", "application/json; charset=utf-8", body)
+	data, err := r.post(ctx, "applyapp.cgi", "text/plain; charset=utf-8", []byte(url.QueryEscape(string(body))))
 	if err != nil {
 		return fmt.Errorf("send ASUS action: %w", err)
 	}
@@ -282,19 +282,22 @@ func (r *AsusGenericRouter) updateDHCPDNS(ctx context.Context) error {
 	}
 
 	// NVRAM values are only useful to DHCP clients after dnsmasq reloads.
-	if err := r.pushAction(ctx, map[string]any{
+	restartErr := r.pushAction(ctx, map[string]any{
 		"action_mode": "apply",
 		"rc_service":  "restart_dnsmasq",
-	}); err != nil {
-		return fmt.Errorf("ASUS DHCP DNS values were stored and verified, but dnsmasq restart failed: %w", err)
-	}
+	})
+	// A service command can also lose its acknowledgement after dispatch.
+	// Read the saved NVRAM values, but never replay the restart blindly.
 	verified, err := r.readNVRAM(ctx, keys)
 	if err != nil {
 		return fmt.Errorf("verify ASUS DHCP DNS after dnsmasq restart: %w", err)
 	}
 	if verified[keys[0]] != want1 || verified[keys[1]] != want2 {
-		return fmt.Errorf("ASUS DHCP DNS changed after dnsmasq restart (primary=%q secondary=%q)",
-			verified[keys[0]], verified[keys[1]])
+		return fmt.Errorf("ASUS DHCP DNS changed after dnsmasq restart (primary=%q secondary=%q; restart error=%v)",
+			verified[keys[0]], verified[keys[1]], restartErr)
+	}
+	if restartErr != nil {
+		return fmt.Errorf("ASUS DHCP DNS values are stored, but dnsmasq restart could not be confirmed: %w", restartErr)
 	}
 	return nil
 }
