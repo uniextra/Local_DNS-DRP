@@ -25,7 +25,7 @@ func main() {
 		log.Fatalf("Configuration error: %v", err)
 	}
 
-	log.Printf("Starting AdGuard Home monitor: %d target(s), interval=%s, query=%s", len(cfg.Targets), cfg.Interval, cfg.TestDomain)
+	log.Printf("Starting Local_DNS-DRP monitor: %d target(s), interval=%s, query=%s", len(cfg.Targets), cfg.Interval, cfg.TestDomain)
 	for _, target := range cfg.Targets {
 		log.Printf("Configured target: %s (%s)", target.Name, target.Addr)
 	}

@@ -90,8 +90,13 @@ func TestMonitorAlertsFallbackSkipAndRecovery(t *testing.T) {
 		t.Fatalf("expected 0 recovery calls when fallback DNS fail, got %d", router.calls)
 	}
 	last := notifier.messages[len(notifier.messages)-1]
-	if !strings.Contains(last, "caída de internet") {
+	if !strings.Contains(last, "Posible caída de internet") {
 		t.Fatalf("expected fallback skip warning, got %q", last)
+	}
+	for _, msg := range notifier.messages {
+		if strings.Contains(strings.ToLower(msg), "adguard") {
+			t.Fatalf("unexpected AdGuard branding in Telegram message: %q", msg)
+		}
 	}
 
 	// Fallback DNS comes back -> recovery triggers immediately on next cycle

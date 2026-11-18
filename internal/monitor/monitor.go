@@ -95,12 +95,12 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 			allDown = false
 			log.Printf("%s (%s): OK", target.Name, target.Addr)
 			if previous.Known && !previous.Healthy {
-				m.notify(ctx, fmt.Sprintf("🟢 AdGuard DNS RECUPERADO\nInstancia: %s\nIP: %s\nPrueba: %s\nEstado: DNS operativo", target.Name, target.Addr, m.cfg.TestDomain))
+				m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DNS recuperado\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Estado: operativo", target.Name, target.Addr, m.cfg.TestDomain))
 			}
 		} else {
 			log.Printf("WARN %s (%s): FAILED - %s", target.Name, target.Addr, detail)
 			if !previous.Known || previous.Healthy {
-				m.notify(ctx, fmt.Sprintf("🔴 FALLO AdGuard DNS\nInstancia: %s\nIP: %s\nPrueba: %s\nError: %s", target.Name, target.Addr, m.cfg.TestDomain, detail))
+				m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — DNS caído\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Error: %s", target.Name, target.Addr, m.cfg.TestDomain, detail))
 			}
 		}
 	}
@@ -126,13 +126,13 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 		log.Printf("WARN router recovery skipped (model=%s): fallback DNS %s / %s do not answer either (%s)", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary, detail)
 		if !m.fallbackSkipNotified {
 			m.fallbackSkipNotified = true
-			m.notify(ctx, fmt.Sprintf("🟠 Todos los DNS monitorizados están caídos, pero los DNS de respaldo (%s / %s) tampoco responden: parece una caída de internet, no de AdGuard. No se modifica el router; se reintentará en cada comprobación.", m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
+			m.notify(ctx, fmt.Sprintf("🟠 Local_DNS-DRP — Posible caída de internet\n\nTodos los DNS monitorizados han fallado, pero los DNS de respaldo tampoco responden:\n• Respaldo: %s / %s\n• Acción: no se modifica el router; se reintentará en el próximo ciclo", m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 		}
 		return
 	}
 
 	m.fallbackSkipNotified = false
-	m.notify(ctx, fmt.Sprintf("🚨 AdGuard: todos los DNS monitorizados están caídos. Iniciando recuperación del router %s (%s).", m.cfg.Router.Model, m.cfg.Router.URL))
+	m.notify(ctx, fmt.Sprintf("🚨 Local_DNS-DRP — Activando DRP en el router\n\nTodos los DNS locales han fallado (%d comprobaciones seguidas). Se procede a cambiar los DNS DHCP del router a los servidores de respaldo:\n• Router: %s (%s)\n• Acción: actualizar DNS DHCP -> %s / %s", m.cfg.Router.FailureThreshold, m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 	recoveryCtx, cancel := context.WithTimeout(ctx, 2*time.Minute+m.cfg.Router.WiFiOff)
 	err := m.router.Recover(recoveryCtx)
 	cancel()
@@ -140,24 +140,24 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 
 	if err != nil {
 		log.Printf("ERROR router recovery failed (model=%s): %v", m.cfg.Router.Model, err)
-		m.notify(ctx, fmt.Sprintf("🔴 ERROR recuperación router %s\n%s", m.cfg.Router.Model, err))
+		m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — Error al ejecutar DRP en el router\n\nNo se pudieron actualizar los DNS DHCP del router:\n• Router: %s (%s)\n• DNS intentados: %s / %s\n• Detalle: %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary, err))
 		return
 	}
 	log.Printf("Router recovery completed (model=%s): DNS=%s,%s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary)
-	m.notify(ctx, fmt.Sprintf("🟢 Recuperación del router %s completada\nDNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
+	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DRP completado (DNS del router actualizados)\n\nEl router ya distribuye los DNS de respaldo por DHCP:\n• Router: %s (%s)\n• Nuevos DNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 }
 
 // Run starts the monitoring loop and blocks until ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) {
 	lines := make([]string, 0, len(m.cfg.Targets))
 	for _, target := range m.cfg.Targets {
-		lines = append(lines, fmt.Sprintf("• %s: %s", target.Name, target.Addr))
+		lines = append(lines, fmt.Sprintf("• %s (%s)", target.Name, target.Addr))
 	}
 	label := "servidores DNS"
 	if len(m.cfg.Targets) == 1 {
 		label = "servidor DNS"
 	}
-	m.notify(ctx, fmt.Sprintf("🟢 AdGuard DNS Monitor iniciado\nMonitorizando %d %s\n%s", len(m.cfg.Targets), label, strings.Join(lines, "\n")))
+	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP iniciado\n\nMonitorizando %d %s:\n%s", len(m.cfg.Targets), label, strings.Join(lines, "\n")))
 
 	m.CheckOnce(ctx)
 
@@ -167,7 +167,7 @@ func (m *Monitor) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			m.notify(context.Background(), "⚪ AdGuard DNS Monitor detenido")
+			m.notify(context.Background(), "⚪ Local_DNS-DRP detenido")
 			return
 		case <-ticker.C:
 			m.CheckOnce(ctx)
