@@ -1,44 +1,44 @@
-## Soporte de router
+## Router Support
 
-- [ ] Este PR añade o modifica un adaptador de recuperación.
-- [ ] El adaptador está registrado en `newRouterRecovery` y tiene un identificador `ROUTER_MODEL` estable.
-- [ ] Se ha actualizado la tabla de routers soportados y la documentación del README.
-- [ ] Los tests utilizan un router/servidor simulado y fixtures saneados; no contactan con un router físico.
-- [ ] Se adjunta el [Router Discovery Report](../docs/router-discovery-report-template.md) cumplimentado o se explica por qué no aplica.
+- [ ] This PR adds or modifies a router recovery adapter.
+- [ ] The adapter is registered in `NewRouterRecovery` (`internal/recovery/router.go`) with a stable `ROUTER_MODEL` identifier.
+- [ ] The supported routers table in `README.md` has been updated.
+- [ ] Tests use mocked HTTP servers (`httptest`) and sanitized fixtures; they do not contact a physical router.
+- [ ] A completed [Router Discovery Report](docs/router-discovery-report-template.md) is attached, or an explanation is provided for why it does not apply.
 
-## Dispositivo y firmware
+## Device & Firmware
 
-- Fabricante y modelo exacto:
-- Revisión de hardware:
-- Firmware/build:
-- Operador y región (si el firmware está personalizado):
-- Identificador `ROUTER_MODEL`:
-- Agente de IA utilizado (opcional: Claude, Codex, Antigravity u otro):
-- Herramienta de navegador/MCP utilizada (opcional):
+- Manufacturer and exact model:
+- Hardware revision:
+- Firmware / build:
+- ISP / region (if customized firmware):
+- `ROUTER_MODEL` identifier:
+- AI agent used (optional: Claude, Codex, Antigravity, etc.):
+- Browser / MCP tool used (optional):
 
-## Comportamiento de recuperación
+## Recovery Behavior
 
-- [ ] Actualización de DNS DHCP
-- [ ] Reinicio/reactivación de Wi-Fi (si aplica)
-- [ ] Verificación mediante lectura posterior
-- [ ] Restauración segura ante errores/cancelación
+- [ ] DHCP DNS update
+- [ ] Wi-Fi radio restart/re-enable (if applicable)
+- [ ] Post-write verification via read-back
+- [ ] Safe restoration on errors or context cancellation
 
-Describe las operaciones implementadas y las limitaciones conocidas:
+Describe the implemented operations and known limitations:
 
-## Evidencias
+## Evidence
 
-Describe los endpoints y ejemplos de petición/respuesta saneados o las evidencias del firmware incluidas. Adjunta el Router Discovery Report cuando se haya realizado esa fase. Distingue los hallazgos observados, inferidos y pendientes de verificar. Confirma que has eliminado contraseñas, cookies, IDs de sesión, tokens, números de serie, direcciones MAC y datos personales.
+Describe the endpoints and sanitized request/response examples, or firmware evidence included. Distinguish between **observed**, **inferred**, and **pending verification**. Confirm that all passwords, cookies, session IDs, tokens, serial numbers, MAC addresses, and personal data have been removed.
 
-## Validación
+## Validation
 
-- [ ] `gofmt -w *.go`
+- [ ] `gofmt -w .`
 - [ ] `go test -race -count=1 ./...`
 - [ ] `go vet ./...`
 - [ ] `go build ./...`
-- [ ] Prueba contra router físico realizada (opcional; indica firmware y resultado):
+- [ ] Tested against a physical router (optional; state firmware and outcome):
 
-## Seguridad
+## Security
 
-- [ ] No se han incluido credenciales, tokens, cookies, IDs de sesión ni capturas sin sanear.
-- [ ] El adaptador no registra secretos ni cambia parámetros ajenos a la recuperación.
-- [ ] Las escrituras se verifican leyendo el estado resultante del router.
+- [ ] No real credentials, tokens, cookies, session IDs, or unsanitized captures are included.
+- [ ] The adapter never logs secrets or modifies settings unrelated to recovery.
+- [ ] Writes are verified by reading back the resulting router state.
