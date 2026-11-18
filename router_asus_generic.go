@@ -263,7 +263,7 @@ func (r *AsusGenericRouter) updateDHCPDNS(ctx context.Context) error {
 	// These are LAN DHCP DNS settings. Do not use wan*_dns* keys, which
 	// configure the router's WAN resolver rather than DNS advertised to clients.
 	writeErr := r.pushAction(ctx, map[string]any{
-		"action_mode":  "apply",
+		"action_mode": "apply",
 		"dhcp_dns1_x": want1,
 		"dhcp_dns2_x": want2,
 	})
