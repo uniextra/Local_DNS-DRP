@@ -43,6 +43,55 @@ git clone https://github.com/uniextra/Local_DNS-DRP.git
 cd Local_DNS-DRP
 ```
 
+Or copy this ready-to-use `docker-compose.yml` (no clone required, pulls the multi-arch image directly from Docker Hub):
+
+```yaml
+services:
+  adguard-dns-monitor:
+    image: uniextra/local-dns-drp:latest
+    pull_policy: always
+    container_name: adguard-dns-monitor
+    restart: unless-stopped
+    environment:
+      # DNS targets: comma-separated name=IP[:port] entries
+      TARGETS: "adguard-home=192.168.1.2,adguard-backup=192.168.1.3"
+
+      # Telegram credentials
+      TELEGRAM_BOT_TOKEN: "YOUR_TELEGRAM_BOT_TOKEN"
+      TELEGRAM_CHAT_ID: "YOUR_TELEGRAM_CHAT_ID"
+
+      # DNS monitor
+      CHECK_INTERVAL: "60"
+      DNS_TIMEOUT: "3"
+      DNS_TEST_DOMAIN: "google.com"
+      TELEGRAM_TIMEOUT: "10"
+
+      # Optional automatic router recovery (askey-rtf8316vw or asus-generic)
+      ROUTER_MODEL: "askey-rtf8316vw"
+      ROUTER_URL: "http://192.168.1.1"
+      ROUTER_USERNAME: "1234"
+      ROUTER_PASSWORD: "" # Set the router web password to enable recovery
+      DNS_PRIMARY: "1.1.1.1"
+      DNS_SECONDARY: "8.8.8.8"
+      WIFI_OFF_SECONDS: "10"
+      RECOVERY_COOLDOWN: "900"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+```
+
 Edit `environment` in [`docker-compose.yml`](docker-compose.yml):
 
 - `TARGETS`: comma-separated `name=IP[:port]` entries (e.g. `adguard-home=192.168.1.2,adguard-backup=192.168.1.3`).
