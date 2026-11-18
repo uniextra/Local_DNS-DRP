@@ -34,7 +34,66 @@ Utiliza marcadores como `<REDACTED>`, `192.0.2.10` y `example.invalid`. Nunca su
 
 Documenta si la interfaz de administración usa HTTP o HTTPS, cómo funciona la autenticación, cómo caducan las sesiones y cómo informa el firmware de las escrituras rechazadas o aplicadas parcialmente. Una respuesta HTTP 200 no demuestra por sí sola que el cambio se haya aplicado.
 
-## 3. Elegir el identificador ROUTER_MODEL
+## 3. Descubrir la API del router con un agente de IA
+
+No es necesario que todos los colaboradores sepan hacer ingeniería inversa del tráfico HTTP ni que utilicen una herramienta concreta. Puedes apoyarte en un agente de IA, por ejemplo **Claude, Codex, Antigravity u otro agente compatible con automatización del navegador**.
+
+La herramienta de navegador es opcional. Cuando esté disponible, puedes conectar el agente a Chrome mediante **Chrome DevTools MCP** u otra integración de automatización/inspección del navegador. El agente también puede trabajar con documentación del fabricante, capturas y ejemplos HTTP saneados que le proporciones manualmente.
+
+El objetivo de esta fase es obtener un **Router Discovery Report** reproducible. El agente ayuda a observar y documentar el protocolo; no sustituye las pruebas ni debe inventar endpoints.
+
+### Preparar el entorno
+
+1. Conecta el ordenador a la misma red que el router y comprueba que puedes abrir su interfaz de administración.
+2. Utiliza, preferiblemente, un perfil de navegador dedicado a investigar routers, sin sesiones personales ni otras pestañas privadas.
+3. Configura en tu agente la integración de navegador que tengas disponible. Si utilizas Chrome DevTools MCP, verifica que el agente puede inspeccionar la pestaña correcta y sus peticiones de red.
+4. Ten a mano el modelo exacto, revisión de hardware, versión de firmware y operador/país si el firmware está personalizado.
+5. No compartas con el agente ni con el repositorio contraseñas, tokens, cookies o identificadores de sesión como parte del informe.
+
+La conexión MCP no es un requisito de ejecución de Local_DNS-DRP: se utiliza únicamente durante la fase de investigación y desarrollo. El adaptador final debe funcionar directamente desde Go, sin Chrome, DevTools ni un navegador en producción.
+
+### Secuencia de descubrimiento
+
+Pide al agente que trabaje por fases y que distinga siempre entre **observado**, **inferido** y **pendiente de verificar**:
+
+1. **Inventario y autenticación (solo lectura):** identifica las páginas, peticiones de login, mecanismo de sesión, cookies, tokens CSRF y caducidad. Documenta el flujo sin guardar valores secretos.
+2. **Lectura de configuración:** navega por las páginas LAN/DHCP y Wi-Fi y registra las peticiones que permiten consultar los DNS actuales, el rango DHCP y el estado de cada radio.
+3. **Análisis de las operaciones:** describe qué endpoint, método, cabeceras y payload parecen modificar cada parámetro. Antes de realizar escrituras, el agente debe explicar qué cambiará y solicitar tu autorización.
+4. **Prueba controlada:** solo con tu autorización, cambia una opción cada vez. Guarda el estado previo, ejecuta la operación, consulta de nuevo el estado y comprueba el resultado. Cambiar el Wi-Fi puede interrumpir la sesión del navegador; tenlo en cuenta antes de probarlo.
+5. **Errores y sesiones:** documenta respuestas de credenciales incorrectas, sesión caducada, escritura rechazada, timeout y respuesta HTTP 200 sin cambio efectivo.
+6. **Informe:** completa la plantilla [Router Discovery Report](docs/router-discovery-report-template.md). Incluye ejemplos saneados y las limitaciones de la revisión de hardware/firmware probada.
+
+No permitas que el agente reinicie el router, restaure valores de fábrica, cambie la contraseña, desactive el firewall ni modifique otros parámetros ajenos a la recuperación. Cualquier operación que pueda interrumpir conectividad o cambiar configuración requiere tu autorización expresa.
+
+### Prompt genérico para el agente
+
+Puedes copiar el prompt de [Router Discovery Agent](docs/router-discovery-agent-prompt.md) en Claude, Codex, Antigravity u otro agente. Adapta el nombre del router y la información disponible. No depende de una marca, modelo de agente ni proveedor de MCP concretos.
+
+### Sanitización obligatoria
+
+Las herramientas de inspección del navegador pueden mostrar información sensible. Antes de guardar, compartir o adjuntar cualquier resultado, elimina:
+
+- `Cookie`, `Set-Cookie`, `Authorization`, contraseñas y tokens CSRF.
+- IDs de sesión, claves temporales, tokens de acceso y parámetros de login.
+- IP públicas, números de serie, direcciones MAC, SSID y datos de cuenta.
+- Cuerpos de petición/respuesta que incluyan información personal o secretos.
+
+No adjuntes HAR, capturas de red o volcados sin revisar. Si necesitas conservar una petición, sustituye los valores sensibles por `<REDACTED>` y usa direcciones de documentación como `192.0.2.10`. No confíes únicamente en que el agente haya ocultado automáticamente los secretos: revisa tú mismo los ficheros generados.
+
+### Del informe al adaptador
+
+Cuando el informe esté completo:
+
+- Implementa un adaptador Go independiente que reproduzca solo las peticiones necesarias.
+- No copies cookies o tokens observados durante la sesión de descubrimiento; implementa el proceso de autenticación para obtener una sesión nueva en cada ejecución.
+- Usa lectura posterior para comprobar cada escritura; HTTP 200 no es suficiente.
+- Crea tests deterministas con `httptest` y fixtures saneados. Los tests no deben conectarse al router físico ni a Internet.
+- Registra el identificador `ROUTER_MODEL`, actualiza la documentación y adjunta el informe saneado al PR.
+- Indica el firmware exacto probado. No declares compatibles otras revisiones o versiones que no hayas verificado.
+
+El agente puede ayudar a generar el adaptador y los tests, pero el colaborador sigue siendo responsable de revisar el código, los cambios que realiza sobre el router y los resultados de las pruebas.
+
+## 4. Elegir el identificador ROUTER_MODEL
 
 La variable de entorno `ROUTER_MODEL` selecciona el adaptador. Utiliza un identificador estable en minúsculas y formato kebab-case, basado en fabricante y modelo. Ejemplos:
 
@@ -46,7 +105,7 @@ Usa exactamente el mismo identificador en el selector de adaptadores, los tests,
 
 Por compatibilidad, si se omite `ROUTER_MODEL` se selecciona `askey-rtf8316vw`. Cuando `ROUTER_PASSWORD` habilita la recuperación, un identificador desconocido debe producir un error de configuración. Nunca debe caer por defecto en el adaptador Askey.
 
-## 4. Implementar un adaptador independiente
+## 5. Implementar un adaptador independiente
 
 El contrato común es:
 
@@ -119,7 +178,7 @@ Un adaptador listo para producción debe:
 
 Si el modelo no tiene radios Wi-Fi o alguna operación no aplica, documenta esa limitación. No informes de una operación como completada si el hardware no la soporta.
 
-## 5. Añadir tests automatizados
+## 6. Añadir tests automatizados
 
 Los tests deben ejecutarse sin router físico y sin Internet. Utiliza `net/http/httptest` u otro servidor simulado determinista y, cuando corresponda, fixtures saneados bajo `testdata/routers/<router-model>/`.
 
@@ -148,7 +207,7 @@ go build ./...
 
 La CI del repositorio también construye la imagen Docker para `linux/amd64` y `linux/arm64`.
 
-## 6. Actualizar la documentación y Compose
+## 7. Actualizar la documentación y Compose
 
 Un PR que añada un router debe actualizar:
 
@@ -159,7 +218,7 @@ Un PR que añada un router debe actualizar:
 
 El Compose de ejemplo define las credenciales mediante `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `ROUTER_PASSWORD` en `environment`. No incluyas valores reales de credenciales en los PR, issues, fixtures ni capturas; utiliza siempre placeholders. Los usuarios que desplieguen el proyecto deben mantener su `docker-compose.yml` privado y restringir el acceso al host Docker.
 
-## 7. Abrir el pull request
+## 8. Abrir el pull request
 
 Crea una rama basada en el `main` más reciente, añade el adaptador y sus tests, y abre un PR usando la plantilla del repositorio. Incluye:
 
