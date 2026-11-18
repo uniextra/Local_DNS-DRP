@@ -137,7 +137,7 @@ type RouterRecovery interface {
 }
 ```
 
-Añade la implementación del fabricante/modelo en un fichero propio, preferiblemente con el nombre `router_<fabricante>_<modelo>.go`. Mantén dentro de ese adaptador el login, las sesiones, las peticiones HTTP, el parseo de respuestas y la lógica de lectura/verificación de escrituras.
+Añade la implementación del fabricante/modelo en un fichero propio dentro de `internal/recovery/`, preferiblemente con el nombre `router_<fabricante>_<modelo>.go`. Mantén dentro de ese adaptador el login, las sesiones, las peticiones HTTP, el parseo de respuestas y la lógica de lectura/verificación de escrituras.
 
 Esquema simplificado:
 
@@ -167,7 +167,7 @@ func (r *TPLinkArcherAX55Router) Recover(ctx context.Context) error {
 
 Es solo un ejemplo de estructura, no una implementación funcional. Utiliza la API documentada u observada del router; no copies los endpoints ni payloads del Askey salvo que hayas comprobado que realmente son el mismo protocolo.
 
-Registra el adaptador en `newRouterRecovery`, dentro de `router_recovery.go`:
+Registra el adaptador en `NewRouterRecovery`, dentro de `internal/recovery/router.go`:
 
 ```go
 switch model {
@@ -221,7 +221,7 @@ No hagas que los tests contacten con un router real, utilicen credenciales reale
 Ejecuta antes de enviar el PR:
 
 ```bash
-gofmt -w *.go
+gofmt -w .
 go test -race -count=1 ./...
 go vet ./...
 go build ./...

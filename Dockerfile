@@ -5,9 +5,10 @@ ARG TARGETARCH
 WORKDIR /src
 RUN apk add --no-cache ca-certificates
 COPY go.mod ./
-COPY *.go ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 # Keep the original executable path for compatibility with existing deployments.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/adguard-dns-monitor .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/adguard-dns-monitor ./cmd/dns-monitor
 
 # Scratch keeps the runtime minimal and avoids emulation for multi-platform builds.
 FROM scratch

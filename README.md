@@ -18,6 +18,25 @@ El servicio no tiene interfaz web ni publica puertos. Se distribuye como imagen 
 - Configura las credenciales de Telegram y del router directamente mediante variables de entorno en `docker-compose.yml`.
 - Publica imágenes Docker multi-arquitectura `linux/amd64` y `linux/arm64`.
 
+## Estructura del proyecto
+
+```text
+.
+├── cmd/dns-monitor/        # Punto de entrada del binario y manejo de señales
+├── internal/
+│   ├── config/             # Carga y validación de variables de entorno
+│   ├── dns/                # Consultas UDP A-record y validación de cadena CNAME
+│   ├── monitor/            # Bucle de monitorización, fallback DNS y cooldown
+│   ├── notify/             # Cliente Telegram (con sanitización de token y truncado)
+│   └── recovery/           # Selector ROUTER_MODEL y adaptador Askey RTF8316VW
+├── docs/                   # Arquitectura y guías de descubrimiento de routers
+├── Dockerfile              # Build multi-stage estático (scratch, amd64/arm64)
+├── docker-compose.yml      # Despliegue endurecido del monitor
+└── CONTRIBUTING.md         # Guía para añadir adaptadores de nuevos routers
+```
+
+Consulta [docs/architecture.md](docs/architecture.md) para ver el diagrama de flujo completo y los detalles de validación DNS.
+
 ## Requisitos
 
 - Docker Engine y Docker Compose.

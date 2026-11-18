@@ -1,5 +1,13 @@
+.git
+.github
+.githooks
+.gitignore
+.gitattributes
+.gitmessage
 .env
-.venv
-__pycache__/
-*.py[cod]
-.pytest_cache/
+.env.*
+docs
+scripts
+*.md
+docker-compose.yml
+coverage.out
