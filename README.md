@@ -219,7 +219,7 @@ Mantén `DNS_PRIMARY`, `DNS_SECONDARY` y `WIFI_OFF_SECONDS` como en el resto de 
 
 ### Compatibilidad y límites
 
-<badge>Experimental</badge>
+**Estado experimental.**
 
 - La API y las claves NVRAM son comunes en distintas generaciones de ASUSWRT, pero los endpoints, autenticación, servicios y variables pueden cambiar entre modelos y builds.
 - No se autodetecta el fabricante ni el firmware para seleccionar este adaptador. Debes configurarlo expresamente con `ROUTER_MODEL=asus-generic`.
