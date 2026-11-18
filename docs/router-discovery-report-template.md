@@ -1,161 +1,154 @@
 # Router Discovery Report
 
-> Informe de investigación del protocolo de administración de un router para preparar un adaptador de recuperación de Local_DNS-DRP.
+> Protocol research report for adding a router recovery adapter to **Local_DNS-DRP**.
 >
-> Completa lo que conozcas. Usa `No observado` o `Pendiente de verificar` en lugar de adivinar. Adjunta únicamente evidencias saneadas.
+> Fill in only what you know. Use `Not observed` or `Pending verification` instead of guessing, and attach sanitized evidence only.
 
-## 1. Identificación del equipo
+## 1. Device Identification
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
-| Fabricante | |
-| Modelo comercial exacto | |
-| Revisión de hardware | |
+| Manufacturer | |
+| Exact commercial model | |
+| Hardware revision | |
 | Firmware / build | |
-| Operador / región | |
-| URL o tipo de interfaz (HTTP/HTTPS) | |
-| Identificador propuesto `ROUTER_MODEL` | |
-| Fecha de investigación | |
-| Agente de IA utilizado (opcional) | |
-| Herramienta de navegador/MCP utilizada (opcional) | |
+| ISP / region | |
+| Management URL / protocol (HTTP/HTTPS) | |
+| Proposed `ROUTER_MODEL` slug | |
+| Research date | |
+| AI agent used (optional) | |
+| Browser / MCP tool used (optional) | |
 
-## 2. Alcance y entorno
+## 2. Scope & Environment
 
-- Acceso utilizado (LAN, Wi-Fi, equipo conectado por cable):
-- Navegador y perfil dedicado (si aplica):
-- Versión de firmware y condiciones relevantes:
-- Operaciones investigadas:
-  - [ ] Lectura de configuración LAN/DHCP
-  - [ ] Actualización de DNS DHCP
-  - [ ] Lectura de estado Wi-Fi
-  - [ ] Desactivación/reactivación de radios Wi-Fi
-  - [ ] Autenticación y gestión de sesión
-  - [ ] Tratamiento de errores y sesiones caducadas
-- ¿Se realizaron escrituras en el router? Indica cuáles y confirma que fueron autorizadas:
-- ¿Se mantuvo el acceso al router durante las pruebas?:
+- Connection used (LAN, Wi-Fi, wired):
+- Browser and dedicated profile (if applicable):
+- Firmware version and relevant conditions:
+- Operations investigated:
+  - [ ] Read LAN/DHCP configuration
+  - [ ] Update DHCP DNS
+  - [ ] Read Wi-Fi radio state
+  - [ ] Disable / re-enable Wi-Fi radios
+  - [ ] Authentication & session lifecycle
+  - [ ] Error & expired-session handling
+- Were any writes performed on the router? List them and confirm explicit authorization:
+- Was router access maintained throughout testing?:
 
-## 3. Flujo de autenticación
+## 3. Authentication Flow
 
-Describe el flujo sin incluir valores secretos.
+Describe the flow without secret values.
 
-| Paso | Método | Ruta (sin parámetros sensibles) | Estado/respuesta esperada | Observaciones |
+| Step | Method | Path (no sensitive params) | Expected status/response | Notes |
 |---|---|---|---|---|
-| Carga/login inicial | | | | |
-| Envío de credenciales | | | | |
-| Obtención/renovación de sesión | | | | |
-| Comprobación de sesión | | | | |
-| Logout (si aplica) | | | | |
+| Initial load / login | | | | |
+| Credential submission | | | | |
+| Session / token acquisition | | | | |
+| Session verification | | | | |
+| Logout (if applicable) | | | | |
 
-- Tipo de autenticación: formulario, Basic, Digest, token, otro.
-- Mecanismo de sesión: cookie, bearer, token CSRF, otro.
-- ¿Cómo se detecta una sesión caducada?:
-- ¿Existe renovación automática?:
-- ¿Hay dependencias de orden, nonce, challenge o campos dinámicos?:
+- Auth type (form, Basic, Digest, token, other):
+- Session mechanism (cookie, bearer, CSRF token, other):
+- How is an expired session detected?:
+- Is automatic renewal supported?:
+- Any ordering, nonce, challenge, or dynamic field dependencies?:
 
-**No incluyas** cookies, tokens CSRF, contraseñas, cabeceras Authorization, identificadores de sesión ni valores de login.
+**Do NOT include** cookies, CSRF tokens, passwords, `Authorization` headers, session IDs, or login values.
 
-## 4. Lectura de configuración
+## 4. Configuration Reads
 
 ### LAN / DHCP
 
-| Dato | Método y ruta | Campo de respuesta | Ejemplo saneado | Clasificación |
+| Data | Method & path | Response field | Sanitized example | Classification |
 |---|---|---|---|---|
-| IP LAN / máscara | | | | |
-| Rango DHCP | | | | |
-| DNS primario | | | | |
-| DNS secundario | | | | |
-| DHCP habilitado | | | | |
+| LAN IP / mask | | | | |
+| DHCP range | | | | |
+| Primary DNS | | | | |
+| Secondary DNS | | | | |
+| DHCP enabled | | | | |
 
 ### Wi-Fi
 
-| Radio/banda | Método y ruta | Campo de respuesta | Estado/campo | Clasificación |
+| Radio / band | Method & path | Response field | State / field | Classification |
 |---|---|---|---|---|
-| 2,4 GHz | | | | |
+| 2.4 GHz | | | | |
 | 5 GHz | | | | |
-| Otras bandas (si aplica) | | | | |
+| Other bands (if any) | | | | |
 
-## 5. Operaciones de escritura observadas
+## 5. Observed Write Operations
 
-> Completa esta sección solo si las escrituras fueron autorizadas. No ejecutes cambios, reinicios ni acciones disruptivas para completar el informe.
+> Complete only if writes were explicitly authorized.
 
-| Operación | Método y ruta | Content-Type | Campos del payload (sin secretos) | Respuesta | Verificación posterior |
+| Operation | Method & path | Content-Type | Payload fields (no secrets) | Response | Post-write verification |
 |---|---|---|---|---|---|
-| Actualizar DNS DHCP | | | | | |
-| Desactivar radio | | | | | |
-| Reactivar radio | | | | | |
+| Update DHCP DNS | | | | | |
+| Disable radio | | | | | |
+| Re-enable radio | | | | | |
 
-Para cada operación, documenta:
+Document for each operation:
 
-- Estado previo y parámetros que deben preservarse.
-- Si el endpoint exige una secuencia concreta de peticiones.
-- Si la respuesta confirma la aceptación o solo la recepción.
-- Qué lectura posterior demuestra que el cambio se aplicó.
-- Efectos secundarios o pérdida temporal de conectividad.
-- Cómo se recupera el estado original si falla un paso.
+- Prior state and settings that must be preserved.
+- Required request sequence, if any.
+- Whether the response confirms acceptance or only receipt.
+- Which follow-up read proves the change took effect.
+- Side effects or temporary connectivity loss.
+- Rollback steps if a step fails.
 
-## 6. Errores y comportamiento límite
+## 6. Errors & Edge Cases
 
-| Caso | Código/respuesta observada | ¿Cómo detectarlo? | ¿Qué debería hacer el adaptador? |
+| Case | Observed code/response | How to detect it | Expected adapter behavior |
 |---|---|---|---|
-| Credenciales incorrectas | | | |
-| Sesión caducada | | | |
-| CSRF/nonce inválido | | | |
-| Petición malformada | | | |
-| Escritura rechazada | | | |
-| HTTP 200 sin aplicar el cambio | | | |
-| Timeout durante una escritura | | | |
-| Router inaccesible | | | |
+| Invalid credentials | | | |
+| Expired session | | | |
+| Invalid CSRF / nonce | | | |
+| Malformed request | | | |
+| Rejected write | | | |
+| HTTP 200 without effect | | | |
+| Write timeout | | | |
+| Router unreachable | | | |
 
-Distingue las respuestas observadas de los comportamientos que todavía no se han probado.
+## 7. Attached Evidence
 
-## 7. Evidencias adjuntas
-
-| ID | Archivo o referencia | Qué demuestra | Cómo se saneó |
+| ID | File or reference | What it proves | How it was sanitized |
 |---|---|---|---|
 | E-01 | | | |
 | E-02 | | | |
 | E-03 | | | |
 
-Adjunta fixtures mínimos de request/response en `testdata/routers/<router-model>/` cuando sean útiles. No adjuntes HAR completos, backups ni exportaciones de configuración sin una revisión exhaustiva.
+Attach minimal sanitized request/response fixtures under `testdata/routers/<router-model>/` when helpful. Never attach raw HAR files or full router backups.
 
-## 8. Clasificación de hallazgos
+## 8. Findings Classification
 
-Marca cada conclusión:
+Mark each conclusion as **Observed**, **Inferred**, or **Pending verification**:
 
-- **Observado:** comprobado directamente mediante una petición/respuesta o cambio de estado.
-- **Inferido:** explicación plausible, todavía no comprobada.
-- **Pendiente de verificar:** no hay evidencia suficiente.
-
-| Hallazgo | Estado | Evidencia | Riesgo o limitación |
+| Area | Status | Evidence | Risk / limitation |
 |---|---|---|---|
-| Login/sesión | | | |
-| Lectura DNS DHCP | | | |
-| Escritura DNS DHCP | | | |
-| Lectura estado Wi-Fi | | | |
-| Control Wi-Fi | | | |
-| Compatibilidad entre firmware | | | |
+| Login / session | | | |
+| DHCP DNS read | | | |
+| DHCP DNS write | | | |
+| Wi-Fi state read | | | |
+| Wi-Fi control | | | |
+| Cross-firmware compatibility | | | |
 
-## 9. Recomendación de implementación
+## 9. Implementation Recommendation
 
-- ¿Es viable implementar un adaptador Go sin navegador?:
-- Endpoints mínimos necesarios:
-- Datos que deben consultarse antes de escribir:
-- Lecturas necesarias para verificar las escrituras:
-- Restauración/limpieza necesaria ante errores:
-- Riesgos conocidos:
-- Versiones exactas que se consideran cubiertas:
-- Casos que deberían cubrir los tests con `httptest`:
+- Viable to implement in Go without a browser?:
+- Minimum required endpoints:
+- Reads required before writing:
+- Reads required to verify writes:
+- Cleanup / restoration needed on error:
+- Known risks:
+- Exact firmware versions covered:
+- `httptest` cases to include:
 
-## 10. Revisión de seguridad
+## 10. Security Checklist
 
-- [ ] No hay contraseñas ni nombres de usuario reales.
-- [ ] No hay cookies, tokens CSRF, IDs de sesión ni cabeceras Authorization.
-- [ ] No hay IP públicas, números de serie, direcciones MAC ni datos personales.
-- [ ] No hay SSID privados ni datos de cuenta.
-- [ ] Se han revisado manualmente las capturas, HAR, logs y fixtures adjuntos.
-- [ ] No se han realizado cambios de configuración sin autorización explícita.
-- [ ] Se ha verificado que las evidencias adjuntas no permiten reutilizar una sesión.
+- [ ] No real passwords or usernames.
+- [ ] No cookies, CSRF tokens, session IDs, or `Authorization` headers.
+- [ ] No public IPs, serial numbers, MAC addresses, or personal data.
+- [ ] No private SSIDs or account details.
+- [ ] All captures, logs, and fixtures manually reviewed.
+- [ ] No unauthorized configuration changes performed.
 
-## 11. Resumen
+## 11. Summary
 
-Explica en unas líneas qué se ha descubierto, qué está probado, qué queda pendiente y si recomiendas iniciar el adaptador.
+Summarize what was discovered, what was tested, what remains pending, and whether you recommend implementing the adapter.
