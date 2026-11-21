@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/config"
-	"github.com/uniextra/Adguardhome-DRP/internal/dns"
-	"github.com/uniextra/Adguardhome-DRP/internal/recovery"
+	"github.com/uniextra/Local_DNS-DRP/internal/config"
+	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
 type stubChecker struct {
@@ -21,6 +21,15 @@ func (s *stubChecker) Check(_ context.Context, target dns.Target, _ string, _ ti
 		return true, "ok"
 	}
 	return false, "timeout"
+}
+
+type slowChecker struct {
+	delay time.Duration
+}
+
+func (s *slowChecker) Check(_ context.Context, _ dns.Target, _ string, _ time.Duration) (bool, string) {
+	time.Sleep(s.delay)
+	return true, "ok"
 }
 
 type stubNotifier struct {
@@ -48,11 +57,12 @@ func testConfig() config.MonitorConfig {
 			{Name: "primary", Addr: "192.168.1.2:53"},
 			{Name: "backup", Addr: "192.168.1.3:53"},
 		},
-		Interval:        10 * time.Millisecond,
-		DNSTimeout:      time.Second,
-		TelegramTimeout: time.Second,
-		TestDomain:      "google.com",
-		RecoveryEnabled: true,
+		Interval:               10 * time.Millisecond,
+		DNSTimeout:             time.Second,
+		TelegramTimeout:        time.Second,
+		TestDomain:             "google.com",
+		RecoveryEnabled:        true,
+		TargetFailureThreshold: 2,
 		Router: recovery.RouterConfig{
 			Model:            recovery.RouterModelAskeyRTF8316VW,
 			URL:              "http://192.168.1.1",
@@ -113,12 +123,94 @@ func TestMonitorAlertsFallbackSkipAndRecovery(t *testing.T) {
 		t.Fatalf("expected cooldown to block recovery, got %d", router.calls)
 	}
 
-	// After cooldown -> runs and reports error
+	// After cooldown, the latch still blocks a second run while every target
+	// remains down: repeating the recovery would keep restarting Wi-Fi.
 	now = now.Add(11 * time.Minute)
 	router.err = errors.New("router busy")
 	mon.CheckOnce(context.Background())
+	if router.calls != 1 {
+		t.Fatalf("expected recovery latch to block repeated runs, got %d", router.calls)
+	}
+
+	// One target recovers -> latch clears.
+	checker.results["192.168.1.2:53"] = true
+	mon.CheckOnce(context.Background())
+	if router.calls != 1 {
+		t.Fatalf("expected no recovery while a target is healthy, got %d", router.calls)
+	}
+
+	// All targets down again for the full threshold -> a new recovery is
+	// allowed now that the cooldown has elapsed.
+	checker.results["192.168.1.2:53"] = false
+	for i := 0; i < cfg.Router.FailureThreshold; i++ {
+		mon.CheckOnce(context.Background())
+	}
 	if router.calls != 2 {
-		t.Fatalf("expected second recovery after cooldown, got %d", router.calls)
+		t.Fatalf("expected second recovery after a new outage, got %d", router.calls)
+	}
+}
+
+func TestMonitorDebouncesPerTargetFailures(t *testing.T) {
+	cfg := testConfig()
+	cfg.Targets = []dns.Target{{Name: "primary", Addr: "192.168.1.2:53"}}
+	cfg.TargetFailureThreshold = 2
+	checker := &stubChecker{results: map[string]bool{"192.168.1.2:53": true}}
+	notifier := &stubNotifier{}
+	mon := New(cfg, checker, notifier, nil)
+
+	mon.CheckOnce(context.Background()) // healthy baseline
+	checker.results["192.168.1.2:53"] = false
+	mon.CheckOnce(context.Background()) // 1/2 failures, still no alert
+	if len(notifier.messages) != 0 {
+		t.Fatalf("expected no alert after a single failure, got %v", notifier.messages)
+	}
+
+	mon.CheckOnce(context.Background()) // 2/2 failures, down alert
+	if len(notifier.messages) != 1 || !strings.Contains(notifier.messages[0], "DNS caído") {
+		t.Fatalf("expected one down alert, got %v", notifier.messages)
+	}
+
+	mon.CheckOnce(context.Background()) // still down, no duplicate alert
+	if len(notifier.messages) != 1 {
+		t.Fatalf("expected no duplicate down alert, got %v", notifier.messages)
+	}
+
+	checker.results["192.168.1.2:53"] = true
+	mon.CheckOnce(context.Background()) // recovered alert
+	if len(notifier.messages) != 2 || !strings.Contains(notifier.messages[1], "DNS recuperado") {
+		t.Fatalf("expected one recovery alert, got %v", notifier.messages)
+	}
+}
+
+func TestMonitorFailureThresholdOneAlertsImmediately(t *testing.T) {
+	cfg := testConfig()
+	cfg.Targets = []dns.Target{{Name: "primary", Addr: "192.168.1.2:53"}}
+	cfg.TargetFailureThreshold = 1
+	checker := &stubChecker{results: map[string]bool{"192.168.1.2:53": false}}
+	notifier := &stubNotifier{}
+	mon := New(cfg, checker, notifier, nil)
+
+	mon.CheckOnce(context.Background())
+	if len(notifier.messages) != 1 || !strings.Contains(notifier.messages[0], "DNS caído") {
+		t.Fatalf("expected an immediate down alert, got %v", notifier.messages)
+	}
+}
+
+func TestMonitorChecksTargetsConcurrently(t *testing.T) {
+	cfg := testConfig()
+	cfg.Targets = []dns.Target{
+		{Name: "a", Addr: "192.168.1.2:53"},
+		{Name: "b", Addr: "192.168.1.3:53"},
+		{Name: "c", Addr: "192.168.1.4:53"},
+		{Name: "d", Addr: "192.168.1.5:53"},
+	}
+	mon := New(cfg, &slowChecker{delay: 150 * time.Millisecond}, &stubNotifier{}, nil)
+
+	start := time.Now()
+	mon.CheckOnce(context.Background())
+	elapsed := time.Since(start)
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("checks appear to run sequentially: %s", elapsed)
 	}
 }
 

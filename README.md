@@ -21,9 +21,10 @@ Want to add your router? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 1. Sends direct UDP `A`-record queries to every IP in `TARGETS` (no hostname resolution dependency).
 2. Sends Telegram alerts on state transitions (down / recovered), startup, and shutdown.
-3. If **all** targets fail for **3 consecutive checks** and `ROUTER_PASSWORD` is set:
+3. If **all** targets fail for **`FAILURE_THRESHOLD` consecutive checks** (3 by default) and `ROUTER_PASSWORD` is set:
    - Probes `DNS_PRIMARY` / `DNS_SECONDARY` first; if they also fail, assumes an ISP/WAN outage and skips router changes.
    - Otherwise, logs into the configured `ROUTER_MODEL`, sets DHCP DNS to `DNS_PRIMARY` and `DNS_SECONDARY`, verifies the change, and enforces `RECOVERY_COOLDOWN` (15 min default).
+   - After a successful recovery, it does not repeat router changes until at least one target recovers, avoiding repeated Wi-Fi restarts during a prolonged outage.
 
 For the full flow diagram and DNS validation details, see [docs/architecture.md](docs/architecture.md).
 
@@ -113,6 +114,8 @@ docker compose logs -f adguard-dns-monitor
 
 Stop with `docker compose down`.
 
+The image ships a `HEALTHCHECK` that turns the container `unhealthy` if the monitor stops writing its heartbeat. Check it with `docker compose ps`.
+
 ## Configuration Reference
 
 ### Monitor & Telegram
@@ -122,10 +125,12 @@ Stop with `docker compose down`.
 | `TARGETS` | *(required)* | Comma-separated `name=IP[:port]` list (default port `53`, IPv4/IPv6 IPs only). |
 | `TELEGRAM_BOT_TOKEN` | *(required)* | Bot token from `@BotFather`. |
 | `TELEGRAM_CHAT_ID` | *(required)* | Destination user, group, or channel ID. |
-| `CHECK_INTERVAL` | `60` | Seconds between check cycles (supports decimals). |
-| `DNS_TIMEOUT` | `3` | Per-query UDP timeout in seconds. |
+| `CHECK_INTERVAL` | `60` | Seconds between check cycles (supports decimals, minimum `1`). |
+| `DNS_TIMEOUT` | `3` | Per-query UDP timeout in seconds; must be lower than `CHECK_INTERVAL`. |
 | `DNS_TEST_DOMAIN` | `google.com` | Domain queried via `A` record. |
 | `TELEGRAM_TIMEOUT` | `10` | HTTP timeout for Telegram API calls in seconds. |
+| `TARGET_FAILURE_THRESHOLD` | `2` | Consecutive failed checks before a single target is reported as down (1–10). |
+| `HEARTBEAT_FILE` | `/tmp/local-dns-drp.heartbeat` | File touched after every check cycle; the container health check reads it. |
 
 ### Router Recovery (Optional)
 
@@ -133,12 +138,13 @@ Stop with `docker compose down`.
 | --- | --- | --- |
 | `ROUTER_PASSWORD` | *(empty)* | Enables automatic router recovery when non-empty. |
 | `ROUTER_MODEL` | `askey-rtf8316vw` | Adapter selector (`askey-rtf8316vw`, `asus-generic`). |
-| `ROUTER_URL` | `http://192.168.1.1` | Router management URL (`http://` or `https://`). |
+| `ROUTER_URL` | `http://192.168.1.1` | Router management URL (`http://` or `https://`, no credentials, query or fragment). |
 | `ROUTER_USERNAME` | `1234` | Router web username. |
 | `DNS_PRIMARY` | `1.1.1.1` | Fallback primary DNS written to router DHCP. |
 | `DNS_SECONDARY` | `8.8.8.8` | Fallback secondary DNS written to router DHCP. |
 | `WIFI_OFF_SECONDS` | `10` | Seconds Wi-Fi radios stay off during Askey recovery. |
 | `RECOVERY_COOLDOWN` | `900` | Minimum seconds between recovery runs (15 minutes). |
+| `FAILURE_THRESHOLD` | `3` | Consecutive all-down cycles before recovery runs (1–10). |
 
 ## Project Structure
 
@@ -150,6 +156,7 @@ Stop with `docker compose down`.
 │   ├── dns/                # UDP A-record checks and CNAME chain validation
 │   ├── monitor/            # Polling loop, fallback DNS probe, and cooldown
 │   ├── notify/             # Telegram client (message truncation and token redaction)
+│   ├── health/             # Heartbeat file for the container health check
 │   └── recovery/           # RouterRecovery interface, Askey & AsusWrt adapters
 ├── docs/                   # Architecture and AI-assisted router discovery guides
 ├── Dockerfile              # Static multi-arch build (scratch, linux/amd64 & arm64)

@@ -24,7 +24,7 @@ You can use an AI agent (Claude, Codex, Antigravity, etc.) with browser automati
 
 ## 3. Implement the Adapter
 
-Choose a stable lower-case kebab-case `ROUTER_MODEL` slug (e.g. `askey-rtf8316vw`, `asus-generic`, `tplink-archer-ax55`), implement `RouterRecovery` in `internal/recovery/router_<vendor>_<model>.go`, and register it in `NewRouterRecovery` inside [`internal/recovery/router.go`](internal/recovery/router.go):
+Choose a stable lower-case kebab-case `ROUTER_MODEL` slug (e.g. `askey-rtf8316vw`, `asus-generic`, `tplink-archer-ax55`), implement `RouterRecovery` in `internal/recovery/router_<vendor>_<model>.go`, and register it in both `ValidateRouterConfig` (pure validation, no client creation) and `NewRouterRecovery` inside [`internal/recovery/router.go`](internal/recovery/router.go):
 
 ```go
 type RouterRecovery interface {

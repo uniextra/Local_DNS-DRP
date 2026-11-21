@@ -8,14 +8,21 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/config"
-	"github.com/uniextra/Adguardhome-DRP/internal/dns"
-	"github.com/uniextra/Adguardhome-DRP/internal/recovery"
+	"github.com/uniextra/Local_DNS-DRP/internal/config"
+	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/health"
+	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
+// maxConcurrentChecks bounds simultaneous UDP probes when many targets are
+// configured.
+const maxConcurrentChecks = 8
+
 // DNSChecker checks whether a DNS target resolves the test domain.
+// Implementations must be safe for concurrent use.
 type DNSChecker interface {
 	Check(ctx context.Context, target dns.Target, domain string, timeout time.Duration) (bool, string)
 }
@@ -25,10 +32,11 @@ type Notifier interface {
 	Send(ctx context.Context, message string) error
 }
 
-// State tracks the last known health status of a DNS target.
+// State tracks the debounced health status of a DNS target.
 type State struct {
-	Known   bool
-	Healthy bool
+	Known    bool
+	Healthy  bool
+	Failures int
 }
 
 // FallbackDNSAnswers reports whether at least one of the resolvers that a
@@ -62,10 +70,17 @@ type Monitor struct {
 	consecutiveAllDown   int
 	lastRecovery         time.Time
 	fallbackSkipNotified bool
+	// recoveryLatched suppresses repeated recovery runs while every target
+	// stays down. It is cleared as soon as at least one target recovers.
+	recoveryLatched bool
+	heartbeatFailed bool
 }
 
 // New creates a Monitor with the provided dependencies. router may be nil when recovery is disabled.
 func New(cfg config.MonitorConfig, checker DNSChecker, notifier Notifier, router recovery.RouterRecovery) *Monitor {
+	if cfg.TargetFailureThreshold < 1 {
+		cfg.TargetFailureThreshold = 1
+	}
 	return &Monitor{
 		cfg:      cfg,
 		checker:  checker,
@@ -84,22 +99,70 @@ func (m *Monitor) notify(ctx context.Context, message string) {
 	}
 }
 
+func (m *Monitor) heartbeat() {
+	if err := health.Touch(m.cfg.HeartbeatFile); err != nil {
+		if !m.heartbeatFailed {
+			log.Printf("WARN heartbeat write failed: %v", err)
+			m.heartbeatFailed = true
+		}
+		return
+	}
+	m.heartbeatFailed = false
+}
+
+// checkResult holds the outcome of one target probe.
+type checkResult struct {
+	healthy bool
+	detail  string
+}
+
 // CheckOnce runs a single check cycle across all configured targets and triggers recovery if thresholds are met.
 func (m *Monitor) CheckOnce(ctx context.Context) {
+	defer m.heartbeat()
+
+	results := make([]checkResult, len(m.cfg.Targets))
+	sem := make(chan struct{}, maxConcurrentChecks)
+	var wg sync.WaitGroup
+	for i, target := range m.cfg.Targets {
+		wg.Add(1)
+		go func(i int, target dns.Target) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			healthy, detail := m.checker.Check(ctx, target, m.cfg.TestDomain, m.cfg.DNSTimeout)
+			results[i] = checkResult{healthy: healthy, detail: detail}
+		}(i, target)
+	}
+	wg.Wait()
+
 	allDown := true
-	for _, target := range m.cfg.Targets {
-		healthy, detail := m.checker.Check(ctx, target, m.cfg.TestDomain, m.cfg.DNSTimeout)
+	for i, target := range m.cfg.Targets {
+		healthy, detail := results[i].healthy, results[i].detail
 		previous := m.states[target.Addr]
-		m.states[target.Addr] = State{Known: true, Healthy: healthy}
+		state := previous
+		state.Known = true
 		if healthy {
+			state.Failures = 0
+			state.Healthy = true
+		} else {
+			state.Failures++
+			if state.Failures >= m.cfg.TargetFailureThreshold {
+				state.Healthy = false
+			}
+		}
+		m.states[target.Addr] = state
+
+		if healthy {
+			// allDown uses the current cycle so recovery latency stays at
+			// FailureThreshold cycles; only the alert state is debounced.
 			allDown = false
 			log.Printf("%s (%s): OK", target.Name, target.Addr)
 			if previous.Known && !previous.Healthy {
 				m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DNS recuperado\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Estado: operativo", target.Name, target.Addr, m.cfg.TestDomain))
 			}
 		} else {
-			log.Printf("WARN %s (%s): FAILED - %s", target.Name, target.Addr, detail)
-			if !previous.Known || previous.Healthy {
+			log.Printf("WARN %s (%s): FAILED (%d/%d) - %s", target.Name, target.Addr, state.Failures, m.cfg.TargetFailureThreshold, detail)
+			if (!previous.Known || previous.Healthy) && !state.Healthy {
 				m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — DNS caído\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Error: %s", target.Name, target.Addr, m.cfg.TestDomain, detail))
 			}
 		}
@@ -113,9 +176,13 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 	} else {
 		m.consecutiveAllDown = 0
 		m.fallbackSkipNotified = false
+		m.recoveryLatched = false
 		return
 	}
 	if m.consecutiveAllDown < m.cfg.Router.FailureThreshold {
+		return
+	}
+	if m.recoveryLatched {
 		return
 	}
 	if !m.lastRecovery.IsZero() && m.now().Sub(m.lastRecovery) < m.cfg.Router.Cooldown {
@@ -144,6 +211,7 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 		return
 	}
 	log.Printf("Router recovery completed (model=%s): DNS=%s,%s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary)
+	m.recoveryLatched = true
 	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DRP completado (DNS del router actualizados)\n\nEl router ya distribuye los DNS de respaldo por DHCP:\n• Router: %s (%s)\n• Nuevos DNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 }
 

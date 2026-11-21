@@ -42,6 +42,25 @@ func NormalizeRouterModel(model string) string {
 	return model
 }
 
+func unsupportedRouterModelError(model string) error {
+	return fmt.Errorf("unsupported ROUTER_MODEL %q; supported models: %s, %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW, RouterModelAsusGeneric)
+}
+
+// ValidateRouterConfig checks that cfg selects a supported adapter and that
+// adapter-specific settings are valid, without creating a client or cookie jar.
+func ValidateRouterConfig(cfg RouterConfig) error {
+	model := NormalizeRouterModel(cfg.Model)
+	switch model {
+	case RouterModelAskeyRTF8316VW:
+		return nil
+	case RouterModelAsusGeneric:
+		_, err := parseAsusBaseURL(cfg.URL)
+		return err
+	default:
+		return unsupportedRouterModelError(model)
+	}
+}
+
 // NewRouterRecovery selects the adapter for ROUTER_MODEL. Unknown models are
 // rejected instead of accidentally sending Askey-specific requests to another
 // manufacturer's router.
@@ -54,6 +73,6 @@ func NewRouterRecovery(cfg RouterConfig) (RouterRecovery, error) {
 	case RouterModelAsusGeneric:
 		return newAsusGenericRouter(cfg)
 	default:
-		return nil, fmt.Errorf("unsupported ROUTER_MODEL %q; supported models: %s, %s (see CONTRIBUTING.md to add an adapter)", model, RouterModelAskeyRTF8316VW, RouterModelAsusGeneric)
+		return nil, unsupportedRouterModelError(model)
 	}
 }

@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/dns"
-	"github.com/uniextra/Adguardhome-DRP/internal/recovery"
+	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/health"
+	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
 // MonitorConfig holds all validated configuration for the DNS monitor service.
@@ -27,6 +28,12 @@ type MonitorConfig struct {
 	TestDomain      string
 	Router          recovery.RouterConfig
 	RecoveryEnabled bool
+	// TargetFailureThreshold is the number of consecutive failed checks a
+	// single target must accumulate before it is reported as down.
+	TargetFailureThreshold int
+	// HeartbeatFile is touched after every check cycle so the container
+	// health check can detect a stalled monitor. Empty disables it.
+	HeartbeatFile string
 }
 
 func envDuration(name, fallback string) (time.Duration, error) {
@@ -45,6 +52,18 @@ func envDuration(name, fallback string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s is below the supported duration resolution", name)
 	}
 	return duration, nil
+}
+
+func envInt(name string, fallback, minValue, maxValue int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minValue || value > maxValue {
+		return 0, fmt.Errorf("%s must be an integer between %d and %d", name, minValue, maxValue)
+	}
+	return value, nil
 }
 
 func parseTargets(rawTargets string) ([]dns.Target, error) {
@@ -120,6 +139,19 @@ func Load() (MonitorConfig, error) {
 	if cfg.TelegramTimeout, err = envDuration("TELEGRAM_TIMEOUT", "10"); err != nil {
 		return cfg, err
 	}
+	if cfg.Interval < time.Second {
+		return cfg, fmt.Errorf("CHECK_INTERVAL must be at least 1 second, got %s", cfg.Interval)
+	}
+	if cfg.DNSTimeout >= cfg.Interval {
+		return cfg, fmt.Errorf("DNS_TIMEOUT (%s) must be less than CHECK_INTERVAL (%s)", cfg.DNSTimeout, cfg.Interval)
+	}
+	if cfg.TargetFailureThreshold, err = envInt("TARGET_FAILURE_THRESHOLD", 2, 1, 10); err != nil {
+		return cfg, err
+	}
+	cfg.HeartbeatFile = strings.TrimSpace(os.Getenv("HEARTBEAT_FILE"))
+	if cfg.HeartbeatFile == "" {
+		cfg.HeartbeatFile = health.DefaultPath()
+	}
 
 	cfg.TestDomain = strings.TrimSuffix(strings.TrimSpace(os.Getenv("DNS_TEST_DOMAIN")), ".")
 	if cfg.TestDomain == "" {
@@ -146,8 +178,8 @@ func Load() (MonitorConfig, error) {
 			cfg.Router.URL = "http://192.168.1.1"
 		}
 		parsedRouterURL, parseErr := url.Parse(cfg.Router.URL)
-		if parseErr != nil || parsedRouterURL.Host == "" || (parsedRouterURL.Scheme != "http" && parsedRouterURL.Scheme != "https") || parsedRouterURL.User != nil {
-			return cfg, errors.New("ROUTER_URL must be an absolute HTTP(S) URL without embedded credentials")
+		if parseErr != nil || parsedRouterURL.Host == "" || (parsedRouterURL.Scheme != "http" && parsedRouterURL.Scheme != "https") || parsedRouterURL.User != nil || parsedRouterURL.RawQuery != "" || parsedRouterURL.Fragment != "" {
+			return cfg, errors.New("ROUTER_URL must be an absolute HTTP(S) URL without embedded credentials, query or fragment")
 		}
 		if cfg.Router.Username == "" {
 			cfg.Router.Username = "1234"
@@ -172,8 +204,10 @@ func Load() (MonitorConfig, error) {
 		if cfg.Router.Cooldown, err = envDuration("RECOVERY_COOLDOWN", "900"); err != nil {
 			return cfg, err
 		}
-		cfg.Router.FailureThreshold = 3
-		if _, err := recovery.NewRouterRecovery(cfg.Router); err != nil {
+		if cfg.Router.FailureThreshold, err = envInt("FAILURE_THRESHOLD", 3, 1, 10); err != nil {
+			return cfg, err
+		}
+		if err := recovery.ValidateRouterConfig(cfg.Router); err != nil {
 			return cfg, err
 		}
 	}

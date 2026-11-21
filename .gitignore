@@ -3,3 +3,8 @@
 .env.*
 !.env.example
 
+# Coverage artifacts
+coverage
+coverage.out
+coverage.html
+
