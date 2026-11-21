@@ -25,10 +25,11 @@ type Notifier interface {
 	Send(ctx context.Context, message string) error
 }
 
-// State tracks the last known health status of a DNS target.
+// State tracks the debounced health status of a DNS target.
 type State struct {
-	Known   bool
-	Healthy bool
+	Known    bool
+	Healthy  bool
+	Failures int
 }
 
 // FallbackDNSAnswers reports whether at least one of the resolvers that a
@@ -66,6 +67,9 @@ type Monitor struct {
 
 // New creates a Monitor with the provided dependencies. router may be nil when recovery is disabled.
 func New(cfg config.MonitorConfig, checker DNSChecker, notifier Notifier, router recovery.RouterRecovery) *Monitor {
+	if cfg.TargetFailureThreshold < 1 {
+		cfg.TargetFailureThreshold = 1
+	}
 	return &Monitor{
 		cfg:      cfg,
 		checker:  checker,
@@ -90,16 +94,30 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 	for _, target := range m.cfg.Targets {
 		healthy, detail := m.checker.Check(ctx, target, m.cfg.TestDomain, m.cfg.DNSTimeout)
 		previous := m.states[target.Addr]
-		m.states[target.Addr] = State{Known: true, Healthy: healthy}
+		state := previous
+		state.Known = true
 		if healthy {
+			state.Failures = 0
+			state.Healthy = true
+		} else {
+			state.Failures++
+			if state.Failures >= m.cfg.TargetFailureThreshold {
+				state.Healthy = false
+			}
+		}
+		m.states[target.Addr] = state
+
+		if healthy {
+			// allDown uses the current cycle so recovery latency stays at
+			// FailureThreshold cycles; only the alert state is debounced.
 			allDown = false
 			log.Printf("%s (%s): OK", target.Name, target.Addr)
 			if previous.Known && !previous.Healthy {
 				m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DNS recuperado\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Estado: operativo", target.Name, target.Addr, m.cfg.TestDomain))
 			}
 		} else {
-			log.Printf("WARN %s (%s): FAILED - %s", target.Name, target.Addr, detail)
-			if !previous.Known || previous.Healthy {
+			log.Printf("WARN %s (%s): FAILED (%d/%d) - %s", target.Name, target.Addr, state.Failures, m.cfg.TargetFailureThreshold, detail)
+			if (!previous.Known || previous.Healthy) && !state.Healthy {
 				m.notify(ctx, fmt.Sprintf("🔴 Local_DNS-DRP — DNS caído\n\n• Instancia: %s\n• Dirección: %s\n• Consulta: %s\n• Error: %s", target.Name, target.Addr, m.cfg.TestDomain, detail))
 			}
 		}

@@ -13,6 +13,7 @@ func setBaseEnv(t *testing.T) {
 	t.Setenv("CHECK_INTERVAL", "")
 	t.Setenv("DNS_TIMEOUT", "")
 	t.Setenv("TELEGRAM_TIMEOUT", "")
+	t.Setenv("TARGET_FAILURE_THRESHOLD", "")
 	t.Setenv("DNS_TEST_DOMAIN", "")
 	t.Setenv("ROUTER_MODEL", "")
 	t.Setenv("ROUTER_PASSWORD", "")
@@ -42,6 +43,9 @@ func TestLoadRecoveryDisabledByDefault(t *testing.T) {
 	}
 	if cfg.Interval != 60*time.Second || cfg.TestDomain != "google.com" {
 		t.Fatalf("unexpected defaults: interval=%s domain=%q", cfg.Interval, cfg.TestDomain)
+	}
+	if cfg.TargetFailureThreshold != 2 {
+		t.Fatalf("TargetFailureThreshold = %d, want 2", cfg.TargetFailureThreshold)
 	}
 }
 
@@ -94,6 +98,9 @@ func TestLoadValidationErrors(t *testing.T) {
 		{name: "inf interval", env: map[string]string{"CHECK_INTERVAL": "Inf"}},
 		{name: "zero interval", env: map[string]string{"CHECK_INTERVAL": "0"}},
 		{name: "overflow interval", env: map[string]string{"CHECK_INTERVAL": "1e20"}},
+		{name: "target failure threshold zero", env: map[string]string{"TARGET_FAILURE_THRESHOLD": "0"}},
+		{name: "target failure threshold too high", env: map[string]string{"TARGET_FAILURE_THRESHOLD": "11"}},
+		{name: "target failure threshold not a number", env: map[string]string{"TARGET_FAILURE_THRESHOLD": "two"}},
 		{name: "invalid domain", env: map[string]string{"DNS_TEST_DOMAIN": "bad..domain"}},
 		{name: "invalid router url", env: map[string]string{"ROUTER_PASSWORD": "pw", "ROUTER_URL": "ftp://192.168.1.1"}},
 		{name: "router url embedded creds", env: map[string]string{"ROUTER_PASSWORD": "pw", "ROUTER_URL": "http://user:pass@192.168.1.1"}},

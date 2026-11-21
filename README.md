@@ -126,6 +126,7 @@ Stop with `docker compose down`.
 | `DNS_TIMEOUT` | `3` | Per-query UDP timeout in seconds. |
 | `DNS_TEST_DOMAIN` | `google.com` | Domain queried via `A` record. |
 | `TELEGRAM_TIMEOUT` | `10` | HTTP timeout for Telegram API calls in seconds. |
+| `TARGET_FAILURE_THRESHOLD` | `2` | Consecutive failed checks before a single target is reported as down (1–10). |
 
 ### Router Recovery (Optional)
 

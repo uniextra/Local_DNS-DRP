@@ -27,6 +27,9 @@ type MonitorConfig struct {
 	TestDomain      string
 	Router          recovery.RouterConfig
 	RecoveryEnabled bool
+	// TargetFailureThreshold is the number of consecutive failed checks a
+	// single target must accumulate before it is reported as down.
+	TargetFailureThreshold int
 }
 
 func envDuration(name, fallback string) (time.Duration, error) {
@@ -45,6 +48,18 @@ func envDuration(name, fallback string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s is below the supported duration resolution", name)
 	}
 	return duration, nil
+}
+
+func envInt(name string, fallback, minValue, maxValue int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minValue || value > maxValue {
+		return 0, fmt.Errorf("%s must be an integer between %d and %d", name, minValue, maxValue)
+	}
+	return value, nil
 }
 
 func parseTargets(rawTargets string) ([]dns.Target, error) {
@@ -118,6 +133,9 @@ func Load() (MonitorConfig, error) {
 		return cfg, err
 	}
 	if cfg.TelegramTimeout, err = envDuration("TELEGRAM_TIMEOUT", "10"); err != nil {
+		return cfg, err
+	}
+	if cfg.TargetFailureThreshold, err = envInt("TARGET_FAILURE_THRESHOLD", 2, 1, 10); err != nil {
 		return cfg, err
 	}
 
