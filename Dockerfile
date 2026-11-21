@@ -1,7 +1,7 @@
 # Build image version stays in sync with go.mod. Pinned to the multi-arch index
-# digest of golang:1.25-alpine; refresh deliberately with:
-# docker buildx imagetools inspect golang:1.25-alpine
-ARG GO_IMAGE=golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59
+# digest of golang:1.27-alpine; refresh deliberately with:
+# docker buildx imagetools inspect golang:1.27-alpine
+ARG GO_IMAGE=golang:1.27-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280
 
 # Compile on the native builder and cross-compile for the requested target.
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
