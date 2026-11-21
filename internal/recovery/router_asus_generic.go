@@ -41,10 +41,18 @@ type AsusGenericRouter struct {
 	token  string
 }
 
-func newAsusGenericRouter(cfg RouterConfig) (*AsusGenericRouter, error) {
-	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(cfg.URL), "/"))
+func parseAsusBaseURL(raw string) (*url.URL, error) {
+	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
 	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
 		return nil, errors.New("ASUS router URL must be an absolute HTTP or HTTPS URL")
+	}
+	return base, nil
+}
+
+func newAsusGenericRouter(cfg RouterConfig) (*AsusGenericRouter, error) {
+	base, err := parseAsusBaseURL(cfg.URL)
+	if err != nil {
+		return nil, err
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {

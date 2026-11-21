@@ -199,7 +199,7 @@ func Load() (MonitorConfig, error) {
 		if cfg.Router.FailureThreshold, err = envInt("FAILURE_THRESHOLD", 3, 1, 10); err != nil {
 			return cfg, err
 		}
-		if _, err := recovery.NewRouterRecovery(cfg.Router); err != nil {
+		if err := recovery.ValidateRouterConfig(cfg.Router); err != nil {
 			return cfg, err
 		}
 	}
