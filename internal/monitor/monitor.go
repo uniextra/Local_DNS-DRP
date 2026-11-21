@@ -8,6 +8,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/uniextra/Local_DNS-DRP/internal/config"
@@ -15,7 +16,12 @@ import (
 	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
+// maxConcurrentChecks bounds simultaneous UDP probes when many targets are
+// configured.
+const maxConcurrentChecks = 8
+
 // DNSChecker checks whether a DNS target resolves the test domain.
+// Implementations must be safe for concurrent use.
 type DNSChecker interface {
 	Check(ctx context.Context, target dns.Target, domain string, timeout time.Duration) (bool, string)
 }
@@ -91,11 +97,32 @@ func (m *Monitor) notify(ctx context.Context, message string) {
 	}
 }
 
+// checkResult holds the outcome of one target probe.
+type checkResult struct {
+	healthy bool
+	detail  string
+}
+
 // CheckOnce runs a single check cycle across all configured targets and triggers recovery if thresholds are met.
 func (m *Monitor) CheckOnce(ctx context.Context) {
+	results := make([]checkResult, len(m.cfg.Targets))
+	sem := make(chan struct{}, maxConcurrentChecks)
+	var wg sync.WaitGroup
+	for i, target := range m.cfg.Targets {
+		wg.Add(1)
+		go func(i int, target dns.Target) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			healthy, detail := m.checker.Check(ctx, target, m.cfg.TestDomain, m.cfg.DNSTimeout)
+			results[i] = checkResult{healthy: healthy, detail: detail}
+		}(i, target)
+	}
+	wg.Wait()
+
 	allDown := true
-	for _, target := range m.cfg.Targets {
-		healthy, detail := m.checker.Check(ctx, target, m.cfg.TestDomain, m.cfg.DNSTimeout)
+	for i, target := range m.cfg.Targets {
+		healthy, detail := results[i].healthy, results[i].detail
 		previous := m.states[target.Addr]
 		state := previous
 		state.Known = true

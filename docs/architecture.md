@@ -42,6 +42,8 @@ flowchart TD
 
 ## DNS Health Check (`internal/dns`)
 
+Checks across targets run concurrently (bounded to 8 in-flight probes), so a cycle takes roughly one timeout instead of `targets × timeout`. Results are applied in configuration order, keeping logs and alerts deterministic.
+
 Each target receives a recursive UDP DNS query (`QTYPE=A`, `QCLASS=IN`) with a `crypto/rand` transaction ID. `ValidateResponse` accepts a response only when:
 
 1. Header length is at least 12 bytes and the transaction ID matches.

@@ -23,6 +23,15 @@ func (s *stubChecker) Check(_ context.Context, target dns.Target, _ string, _ ti
 	return false, "timeout"
 }
 
+type slowChecker struct {
+	delay time.Duration
+}
+
+func (s *slowChecker) Check(_ context.Context, _ dns.Target, _ string, _ time.Duration) (bool, string) {
+	time.Sleep(s.delay)
+	return true, "ok"
+}
+
 type stubNotifier struct {
 	messages []string
 }
@@ -184,6 +193,24 @@ func TestMonitorFailureThresholdOneAlertsImmediately(t *testing.T) {
 	mon.CheckOnce(context.Background())
 	if len(notifier.messages) != 1 || !strings.Contains(notifier.messages[0], "DNS caído") {
 		t.Fatalf("expected an immediate down alert, got %v", notifier.messages)
+	}
+}
+
+func TestMonitorChecksTargetsConcurrently(t *testing.T) {
+	cfg := testConfig()
+	cfg.Targets = []dns.Target{
+		{Name: "a", Addr: "192.168.1.2:53"},
+		{Name: "b", Addr: "192.168.1.3:53"},
+		{Name: "c", Addr: "192.168.1.4:53"},
+		{Name: "d", Addr: "192.168.1.5:53"},
+	}
+	mon := New(cfg, &slowChecker{delay: 150 * time.Millisecond}, &stubNotifier{}, nil)
+
+	start := time.Now()
+	mon.CheckOnce(context.Background())
+	elapsed := time.Since(start)
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("checks appear to run sequentially: %s", elapsed)
 	}
 }
 
