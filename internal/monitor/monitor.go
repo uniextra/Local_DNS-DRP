@@ -13,6 +13,7 @@ import (
 
 	"github.com/uniextra/Local_DNS-DRP/internal/config"
 	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/health"
 	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
@@ -72,6 +73,7 @@ type Monitor struct {
 	// recoveryLatched suppresses repeated recovery runs while every target
 	// stays down. It is cleared as soon as at least one target recovers.
 	recoveryLatched bool
+	heartbeatFailed bool
 }
 
 // New creates a Monitor with the provided dependencies. router may be nil when recovery is disabled.
@@ -97,6 +99,17 @@ func (m *Monitor) notify(ctx context.Context, message string) {
 	}
 }
 
+func (m *Monitor) heartbeat() {
+	if err := health.Touch(m.cfg.HeartbeatFile); err != nil {
+		if !m.heartbeatFailed {
+			log.Printf("WARN heartbeat write failed: %v", err)
+			m.heartbeatFailed = true
+		}
+		return
+	}
+	m.heartbeatFailed = false
+}
+
 // checkResult holds the outcome of one target probe.
 type checkResult struct {
 	healthy bool
@@ -105,6 +118,8 @@ type checkResult struct {
 
 // CheckOnce runs a single check cycle across all configured targets and triggers recovery if thresholds are met.
 func (m *Monitor) CheckOnce(ctx context.Context) {
+	defer m.heartbeat()
+
 	results := make([]checkResult, len(m.cfg.Targets))
 	sem := make(chan struct{}, maxConcurrentChecks)
 	var wg sync.WaitGroup

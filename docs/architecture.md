@@ -12,6 +12,7 @@ This document describes the internal package layout, DNS response validation, an
 │   ├── dns/                # UDP A-record queries and CNAME-chain validation
 │   ├── monitor/            # Polling loop, alert state machine, fallback probe, cooldown
 │   ├── notify/             # Telegram Bot API client with token redaction
+│   ├── health/             # Heartbeat file for the container health check
 │   └── recovery/           # RouterRecovery interface, Askey & AsusWrt adapters
 ├── docs/                   # Architecture and router discovery guides
 ├── Dockerfile              # Multi-stage static build (scratch, amd64/arm64)
@@ -58,3 +59,4 @@ Each target receives a recursive UDP DNS query (`QTYPE=A`, `QCLASS=IN`) with a `
 - **Token redaction:** `internal/notify` strips `TELEGRAM_BOT_TOKEN` from `*url.Error` and any logged error strings.
 - **Ambiguous write protection:** router adapters verify actual router state via read-back rather than trusting HTTP timeouts or optimistic 200 responses.
 - **Safe Wi-Fi restoration:** the Askey adapter uses `sync.Once` with a bounded background context to re-enable Wi-Fi radios even if the monitor receives `SIGTERM` mid-recovery.
+- **Liveness heartbeat:** every check cycle touches `HEARTBEAT_FILE`. The container `HEALTHCHECK` runs the binary with `-healthcheck` and reports `unhealthy` when the file is missing or older than `2 × CHECK_INTERVAL + 30s`.

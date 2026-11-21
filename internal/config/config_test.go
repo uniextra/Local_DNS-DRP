@@ -24,6 +24,7 @@ func setBaseEnv(t *testing.T) {
 	t.Setenv("WIFI_OFF_SECONDS", "")
 	t.Setenv("RECOVERY_COOLDOWN", "")
 	t.Setenv("FAILURE_THRESHOLD", "")
+	t.Setenv("HEARTBEAT_FILE", "")
 }
 
 func TestLoadRecoveryDisabledByDefault(t *testing.T) {
@@ -47,6 +48,9 @@ func TestLoadRecoveryDisabledByDefault(t *testing.T) {
 	}
 	if cfg.TargetFailureThreshold != 2 {
 		t.Fatalf("TargetFailureThreshold = %d, want 2", cfg.TargetFailureThreshold)
+	}
+	if cfg.HeartbeatFile == "" {
+		t.Fatal("HeartbeatFile is empty, want a default path")
 	}
 }
 

@@ -4,20 +4,31 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/uniextra/Local_DNS-DRP/internal/config"
 	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/health"
 	"github.com/uniextra/Local_DNS-DRP/internal/monitor"
 	"github.com/uniextra/Local_DNS-DRP/internal/notify"
 	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "check the monitor heartbeat and exit")
+	flag.Parse()
+	if *healthcheck {
+		os.Exit(runHealthcheck())
+	}
+
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
 
 	cfg, err := config.Load()
@@ -51,4 +62,28 @@ func main() {
 	defer stop()
 
 	mon.Run(ctx)
+}
+
+// runHealthcheck verifies that the monitor loop is still writing heartbeats.
+// It is used by the container HEALTHCHECK and does not load the full config.
+func runHealthcheck() int {
+	interval := 60 * time.Second
+	if raw := strings.TrimSpace(os.Getenv("CHECK_INTERVAL")); raw != "" {
+		if seconds, err := strconv.ParseFloat(raw, 64); err == nil && seconds > 0 && seconds <= 365*24*60*60 {
+			interval = time.Duration(seconds * float64(time.Second))
+		}
+	}
+	path := strings.TrimSpace(os.Getenv("HEARTBEAT_FILE"))
+	if path == "" {
+		path = health.DefaultPath()
+	}
+	maxAge := 2*interval + 30*time.Second
+	if maxAge < time.Minute {
+		maxAge = time.Minute
+	}
+	if err := health.Check(path, maxAge); err != nil {
+		fmt.Fprintf(os.Stderr, "unhealthy: %v\n", err)
+		return 1
+	}
+	return 0
 }

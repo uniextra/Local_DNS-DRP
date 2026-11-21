@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/health"
 	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
@@ -30,6 +31,9 @@ type MonitorConfig struct {
 	// TargetFailureThreshold is the number of consecutive failed checks a
 	// single target must accumulate before it is reported as down.
 	TargetFailureThreshold int
+	// HeartbeatFile is touched after every check cycle so the container
+	// health check can detect a stalled monitor. Empty disables it.
+	HeartbeatFile string
 }
 
 func envDuration(name, fallback string) (time.Duration, error) {
@@ -143,6 +147,10 @@ func Load() (MonitorConfig, error) {
 	}
 	if cfg.TargetFailureThreshold, err = envInt("TARGET_FAILURE_THRESHOLD", 2, 1, 10); err != nil {
 		return cfg, err
+	}
+	cfg.HeartbeatFile = strings.TrimSpace(os.Getenv("HEARTBEAT_FILE"))
+	if cfg.HeartbeatFile == "" {
+		cfg.HeartbeatFile = health.DefaultPath()
 	}
 
 	cfg.TestDomain = strings.TrimSuffix(strings.TrimSpace(os.Getenv("DNS_TEST_DOMAIN")), ".")

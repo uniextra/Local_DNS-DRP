@@ -114,6 +114,8 @@ docker compose logs -f adguard-dns-monitor
 
 Stop with `docker compose down`.
 
+The image ships a `HEALTHCHECK` that turns the container `unhealthy` if the monitor stops writing its heartbeat. Check it with `docker compose ps`.
+
 ## Configuration Reference
 
 ### Monitor & Telegram
@@ -128,6 +130,7 @@ Stop with `docker compose down`.
 | `DNS_TEST_DOMAIN` | `google.com` | Domain queried via `A` record. |
 | `TELEGRAM_TIMEOUT` | `10` | HTTP timeout for Telegram API calls in seconds. |
 | `TARGET_FAILURE_THRESHOLD` | `2` | Consecutive failed checks before a single target is reported as down (1–10). |
+| `HEARTBEAT_FILE` | `/tmp/local-dns-drp.heartbeat` | File touched after every check cycle; the container health check reads it. |
 
 ### Router Recovery (Optional)
 
@@ -153,6 +156,7 @@ Stop with `docker compose down`.
 │   ├── dns/                # UDP A-record checks and CNAME chain validation
 │   ├── monitor/            # Polling loop, fallback DNS probe, and cooldown
 │   ├── notify/             # Telegram client (message truncation and token redaction)
+│   ├── health/             # Heartbeat file for the container health check
 │   └── recovery/           # RouterRecovery interface, Askey & AsusWrt adapters
 ├── docs/                   # Architecture and AI-assisted router discovery guides
 ├── Dockerfile              # Static multi-arch build (scratch, linux/amd64 & arm64)
