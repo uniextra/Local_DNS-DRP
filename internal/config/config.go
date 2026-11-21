@@ -135,6 +135,12 @@ func Load() (MonitorConfig, error) {
 	if cfg.TelegramTimeout, err = envDuration("TELEGRAM_TIMEOUT", "10"); err != nil {
 		return cfg, err
 	}
+	if cfg.Interval < time.Second {
+		return cfg, fmt.Errorf("CHECK_INTERVAL must be at least 1 second, got %s", cfg.Interval)
+	}
+	if cfg.DNSTimeout >= cfg.Interval {
+		return cfg, fmt.Errorf("DNS_TIMEOUT (%s) must be less than CHECK_INTERVAL (%s)", cfg.DNSTimeout, cfg.Interval)
+	}
 	if cfg.TargetFailureThreshold, err = envInt("TARGET_FAILURE_THRESHOLD", 2, 1, 10); err != nil {
 		return cfg, err
 	}
@@ -164,8 +170,8 @@ func Load() (MonitorConfig, error) {
 			cfg.Router.URL = "http://192.168.1.1"
 		}
 		parsedRouterURL, parseErr := url.Parse(cfg.Router.URL)
-		if parseErr != nil || parsedRouterURL.Host == "" || (parsedRouterURL.Scheme != "http" && parsedRouterURL.Scheme != "https") || parsedRouterURL.User != nil {
-			return cfg, errors.New("ROUTER_URL must be an absolute HTTP(S) URL without embedded credentials")
+		if parseErr != nil || parsedRouterURL.Host == "" || (parsedRouterURL.Scheme != "http" && parsedRouterURL.Scheme != "https") || parsedRouterURL.User != nil || parsedRouterURL.RawQuery != "" || parsedRouterURL.Fragment != "" {
+			return cfg, errors.New("ROUTER_URL must be an absolute HTTP(S) URL without embedded credentials, query or fragment")
 		}
 		if cfg.Router.Username == "" {
 			cfg.Router.Username = "1234"
@@ -190,7 +196,9 @@ func Load() (MonitorConfig, error) {
 		if cfg.Router.Cooldown, err = envDuration("RECOVERY_COOLDOWN", "900"); err != nil {
 			return cfg, err
 		}
-		cfg.Router.FailureThreshold = 3
+		if cfg.Router.FailureThreshold, err = envInt("FAILURE_THRESHOLD", 3, 1, 10); err != nil {
+			return cfg, err
+		}
 		if _, err := recovery.NewRouterRecovery(cfg.Router); err != nil {
 			return cfg, err
 		}

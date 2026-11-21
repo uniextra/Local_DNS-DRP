@@ -28,6 +28,7 @@ services:
       DNS_SECONDARY: "8.8.8.8"
       WIFI_OFF_SECONDS: "10"
       RECOVERY_COOLDOWN: "900"
+      FAILURE_THRESHOLD: "3"
     dns:
       - 1.1.1.1
       - 8.8.8.8
