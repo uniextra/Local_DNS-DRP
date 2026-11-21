@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/notify"
+	"github.com/uniextra/Local_DNS-DRP/internal/notify"
 )
 
 // AskeyRouter automates DHCP DNS updates and Wi-Fi radio restarts on an Askey RTF8316VW.

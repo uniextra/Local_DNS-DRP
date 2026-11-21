@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/config"
-	"github.com/uniextra/Adguardhome-DRP/internal/dns"
-	"github.com/uniextra/Adguardhome-DRP/internal/recovery"
+	"github.com/uniextra/Local_DNS-DRP/internal/config"
+	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
 type stubChecker struct {

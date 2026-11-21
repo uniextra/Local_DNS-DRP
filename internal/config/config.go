@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uniextra/Adguardhome-DRP/internal/dns"
-	"github.com/uniextra/Adguardhome-DRP/internal/recovery"
+	"github.com/uniextra/Local_DNS-DRP/internal/dns"
+	"github.com/uniextra/Local_DNS-DRP/internal/recovery"
 )
 
 // MonitorConfig holds all validated configuration for the DNS monitor service.
