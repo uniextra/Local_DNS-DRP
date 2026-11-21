@@ -114,12 +114,30 @@ func TestMonitorAlertsFallbackSkipAndRecovery(t *testing.T) {
 		t.Fatalf("expected cooldown to block recovery, got %d", router.calls)
 	}
 
-	// After cooldown -> runs and reports error
+	// After cooldown, the latch still blocks a second run while every target
+	// remains down: repeating the recovery would keep restarting Wi-Fi.
 	now = now.Add(11 * time.Minute)
 	router.err = errors.New("router busy")
 	mon.CheckOnce(context.Background())
+	if router.calls != 1 {
+		t.Fatalf("expected recovery latch to block repeated runs, got %d", router.calls)
+	}
+
+	// One target recovers -> latch clears.
+	checker.results["192.168.1.2:53"] = true
+	mon.CheckOnce(context.Background())
+	if router.calls != 1 {
+		t.Fatalf("expected no recovery while a target is healthy, got %d", router.calls)
+	}
+
+	// All targets down again for the full threshold -> a new recovery is
+	// allowed now that the cooldown has elapsed.
+	checker.results["192.168.1.2:53"] = false
+	for i := 0; i < cfg.Router.FailureThreshold; i++ {
+		mon.CheckOnce(context.Background())
+	}
 	if router.calls != 2 {
-		t.Fatalf("expected second recovery after cooldown, got %d", router.calls)
+		t.Fatalf("expected second recovery after a new outage, got %d", router.calls)
 	}
 }
 

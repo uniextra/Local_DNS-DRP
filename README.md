@@ -24,6 +24,7 @@ Want to add your router? See [CONTRIBUTING.md](CONTRIBUTING.md).
 3. If **all** targets fail for **3 consecutive checks** and `ROUTER_PASSWORD` is set:
    - Probes `DNS_PRIMARY` / `DNS_SECONDARY` first; if they also fail, assumes an ISP/WAN outage and skips router changes.
    - Otherwise, logs into the configured `ROUTER_MODEL`, sets DHCP DNS to `DNS_PRIMARY` and `DNS_SECONDARY`, verifies the change, and enforces `RECOVERY_COOLDOWN` (15 min default).
+   - After a successful recovery, it does not repeat router changes until at least one target recovers, avoiding repeated Wi-Fi restarts during a prolonged outage.
 
 For the full flow diagram and DNS validation details, see [docs/architecture.md](docs/architecture.md).
 

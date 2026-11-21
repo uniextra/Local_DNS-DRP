@@ -63,6 +63,9 @@ type Monitor struct {
 	consecutiveAllDown   int
 	lastRecovery         time.Time
 	fallbackSkipNotified bool
+	// recoveryLatched suppresses repeated recovery runs while every target
+	// stays down. It is cleared as soon as at least one target recovers.
+	recoveryLatched bool
 }
 
 // New creates a Monitor with the provided dependencies. router may be nil when recovery is disabled.
@@ -131,9 +134,13 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 	} else {
 		m.consecutiveAllDown = 0
 		m.fallbackSkipNotified = false
+		m.recoveryLatched = false
 		return
 	}
 	if m.consecutiveAllDown < m.cfg.Router.FailureThreshold {
+		return
+	}
+	if m.recoveryLatched {
 		return
 	}
 	if !m.lastRecovery.IsZero() && m.now().Sub(m.lastRecovery) < m.cfg.Router.Cooldown {
@@ -162,6 +169,7 @@ func (m *Monitor) CheckOnce(ctx context.Context) {
 		return
 	}
 	log.Printf("Router recovery completed (model=%s): DNS=%s,%s", m.cfg.Router.Model, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary)
+	m.recoveryLatched = true
 	m.notify(ctx, fmt.Sprintf("🟢 Local_DNS-DRP — DRP completado (DNS del router actualizados)\n\nEl router ya distribuye los DNS de respaldo por DHCP:\n• Router: %s (%s)\n• Nuevos DNS DHCP: %s / %s", m.cfg.Router.Model, m.cfg.Router.URL, m.cfg.Router.DNSPrimary, m.cfg.Router.DNSSecondary))
 }
 
